@@ -404,6 +404,30 @@ body {
   animation: scaleIn var(--duration-normal) var(--ease) both;
 }
 
+/* Add/Edit tunnel form: each "aline" is two fields side-by-side. */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+  text-align: left;
+}
+
+.form-grid .label {
+  margin-top: 12px;
+}
+
+@media (max-width: 560px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tunnel modal is wider so the two-column rows fit. */
+.modal-overlay:has(.modal-wide) .modal,
+.modal.modal-wide {
+  max-width: 640px;
+}
+
 .modal h3 {
   margin: 0 0 4px;
 }

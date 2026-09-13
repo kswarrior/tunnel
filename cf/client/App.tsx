@@ -201,6 +201,8 @@ export default function App(): JSX.Element {
               {nav === "tunnels" && (
                 <TunnelsPage
                   tunnels={tunnels.items}
+                  hosts={hosts.items}
+                  providers={providers.items}
                   onAdd={tunnels.add}
                   onToggle={(id) => {
                     const found = tunnels.items.find((t) => t.id === id);

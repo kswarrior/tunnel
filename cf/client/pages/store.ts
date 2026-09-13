@@ -129,12 +129,51 @@ export function newHost(hostname: string, tunnel: string): Host {
   return { id: makeId(), hostname: hostname.trim(), tunnel: tunnel.trim(), createdAt: Date.now() };
 }
 
+function healTunnel(raw: Tunnel): Tunnel {
+  const r = raw as Partial<Tunnel> & { target?: string };
+  const name = typeof r.name === "string" ? r.name : "";
+  const slug = typeof r.slug === "string" && r.slug
+    ? normalizeSlug(r.slug)
+    : normalizeSlug(name);
+  return {
+    id: r.id ?? makeId(),
+    name,
+    slug,
+    tunnelType: typeof r.tunnelType === "string" && r.tunnelType ? r.tunnelType : "HTTP",
+    target: typeof r.target === "string" ? r.target : "",
+    hostId: typeof r.hostId === "string" ? r.hostId : "",
+    providerId: typeof r.providerId === "string" ? r.providerId : "",
+    active: !!r.active,
+    createdAt: typeof r.createdAt === "number" ? r.createdAt : Date.now(),
+  };
+}
+
 export function newProvider(name: string, kind: string): Provider {
   return { id: makeId(), name: name.trim(), kind, active: true, createdAt: Date.now() };
 }
 
+export const DEFAULT_PROVIDER_NAME = "KS Tunnel";
+
 export function useTunnels() {
-  return useCollection<Tunnel>("ks-tunnels");
+  const col = useCollection<Tunnel>("ks-tunnels");
+  // Heal legacy tunnels saved before slug/type/host/provider existed.
+  // Runs once per items change; writes back only when healing changed something.
+  const healed = col.items.map(healTunnel);
+  const needsHeal = healed.some((h, i) => {
+    const o = col.items[i] as Partial<Tunnel>;
+    return o.slug !== h.slug || o.tunnelType !== h.tunnelType || o.hostId !== h.hostId || o.providerId !== h.providerId;
+  });
+  if (needsHeal) {
+    // Defer write to avoid setState-in-render loops; persist healed shape.
+    try {
+      localStorage.setItem("ks-tunnels", JSON.stringify(healed));
+    } catch {
+      // ignore
+    }
+    // Return healed view immediately so the form/dropdowns work.
+    return { ...col, items: healed };
+  }
+  return col;
 }
 
 export function useHosts() {
@@ -147,5 +186,27 @@ function sameHostname(a: Host, b: Host): boolean {
 }
 
 export function useProviders() {
-  return useCollection<Provider>("ks-providers");
+  const col = useCollection<Provider>("ks-providers");
+  // Seed one provider already called "KS Tunnel" so the tunnel form
+  // always has a provider to pick.
+  const hasDefault = col.items.some(
+    (p) => p.name.trim().toLowerCase() === DEFAULT_PROVIDER_NAME.toLowerCase(),
+  );
+  if (!hasDefault && typeof window !== "undefined") {
+    try {
+      const seeded: Provider = {
+        id: makeId(),
+        name: DEFAULT_PROVIDER_NAME,
+        kind: "Cloudflare Workers",
+        active: true,
+        createdAt: Date.now(),
+      };
+      const next = [...col.items, seeded];
+      localStorage.setItem("ks-providers", JSON.stringify(next));
+      return { ...col, items: next };
+    } catch {
+      // storage unavailable — fall through with in-memory items
+    }
+  }
+  return col;
 }
