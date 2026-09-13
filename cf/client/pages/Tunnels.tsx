@@ -208,7 +208,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
   const [hostId, setHostId] = useState("");
   const [providerId, setProviderId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
-  const [formNotice, setFormNotice] = useState<string | null>(null);
+  const [pageNotice, setPageNotice] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Tunnel | null>(null);
   const [pendingEdit, setPendingEdit] = useState<Tunnel | null>(null);
   const [editName, setEditName] = useState("");
@@ -218,7 +218,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
   const [editHostId, setEditHostId] = useState("");
   const [editProviderId, setEditProviderId] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
-  const [editNotice, setEditNotice] = useState<string | null>(null);
 
   const registry = useRegistry(10000);
   const registryBySlug = useMemo(() => {
@@ -244,7 +243,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
   const openModal = () => {
     setModalOpen(true);
     setFormError(null);
-    setFormNotice(null);
   };
 
   const closeModal = () => {
@@ -256,7 +254,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     setHostId("");
     setProviderId("");
     setFormError(null);
-    setFormNotice(null);
   };
 
   const openEdit = (t: Tunnel) => {
@@ -280,7 +277,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     setEditHostId("");
     setEditProviderId("");
     setEditError(null);
-    setEditNotice(null);
   };
 
   const validate = (
@@ -320,24 +316,16 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     });
     onAdd(t);
     setFormError(null);
-    setFormNotice("Saved. Publishing…");
+    closeModal();
+    setPageNotice(`Saved ${t.name} — publishing /${t.slug}…`);
     publishTunnel(t, hosts)
       .then(() => {
-        setFormNotice(`Published — visit /${t.slug} to see ${t.target}.`);
+        setPageNotice(`Published — visit /${t.slug} to see ${t.target}.`);
         registry.refresh();
       })
       .catch((e: unknown) => {
-        setFormNotice(`Saved locally, but publishing failed (${e instanceof Error ? e.message : "worker unreachable"}) — /${t.slug} won't resolve until you re-save with the worker online.`);
+        setPageNotice(`Saved locally, but publishing failed (${e instanceof Error ? e.message : "worker unreachable"}) — /${t.slug} won't resolve until you re-save with the worker online.`);
       });
-    closeModalKeepNotice();
-  };
-
-  // Close the dialog but keep the result notice visible on the page.
-  const [pageNotice, setPageNotice] = useState<string | null>(null);
-  const closeModalKeepNotice = () => {
-    const notice = formNotice;
-    closeModal();
-    if (notice) setPageNotice(notice);
   };
 
   const handleEdit = () => {
@@ -376,13 +364,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
       });
     closeEdit();
   };
-
-  // handleAdd publishes async; keep its notice on the page (see above).
-  // Re-wire: handleAdd closes immediately, so move its notice via pageNotice.
-  useEffect(() => {
-    if (formNotice && !modalOpen) setPageNotice(formNotice);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen]);
 
   return (
     <div className="container">
@@ -526,7 +507,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
             </div>
           </div>
           {formError && <p className="error">{formError}</p>}
-          {formNotice && <p className="muted">{formNotice}</p>}
           <p className="muted" style={{ fontSize: 12 }}>
             Visiting <code>/{normalizeSlug(slug || name) || "hello"}</code> shows <code>{target || "127.0.0.1:4757"}</code> of
             that host — proxied fullscreen via wss (cli → workers → you). One wss per tunnel + one main wss
@@ -640,7 +620,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
             </div>
           </div>
           {editError && <p className="error">{editError}</p>}
-          {editNotice && <p className="muted">{editNotice}</p>}
           <div className="row">
             <button type="button" className="btn" onClick={closeEdit}>
               Cancel
