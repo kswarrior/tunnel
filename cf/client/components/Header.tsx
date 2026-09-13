@@ -32,11 +32,11 @@ export function Header({ sidebarOpen, onToggleSidebar, statusText }: HeaderProps
           viewBox="0 0 32 32"
           aria-hidden="true"
         >
-          <rect width="32" height="32" rx="8" fill="#16a34a" />
+          <rect x="1" y="1" width="30" height="30" rx="8" fill="#f0fdf4" stroke="#16a34a" strokeWidth="2" />
           <path
             d="M9 12.5h11.5M17.7 9.7l2.8 2.8-2.8 2.8"
             fill="none"
-            stroke="#fff"
+            stroke="#16a34a"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -44,7 +44,7 @@ export function Header({ sidebarOpen, onToggleSidebar, statusText }: HeaderProps
           <path
             d="M23 19.5H11.5M14.3 16.7l-2.8 2.8 2.8 2.8"
             fill="none"
-            stroke="#fff"
+            stroke="#15803d"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
