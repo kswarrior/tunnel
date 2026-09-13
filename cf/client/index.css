@@ -519,6 +519,9 @@ body {
   border: 1px solid var(--border);
   color: var(--text-dim);
   white-space: nowrap;
+  transition: background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
 }
 
 .badge-on {
@@ -825,7 +828,7 @@ select.input {
     flex: none;
     z-index: 50;
     transform: translateX(-100%);
-    transition: transform 0.2s ease;
+    transition: transform var(--duration-normal) var(--ease);
     padding-top: 16px;
   }
 
