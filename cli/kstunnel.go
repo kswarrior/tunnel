@@ -4,7 +4,10 @@
 package kstunnel
 
 // Version is the library/binary version.
-const Version = "0.1.0"
+// Declared as var (not const) so release builds can override it via:
+//
+//	go build -ldflags "-X github.com/kswarrior/tunnel/cli.Version=<ver>"
+var Version = "0.1.0"
 
 // Hello returns a hello-world string. Placeholder until tunnel agent lands.
 func Hello() string {
