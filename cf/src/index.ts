@@ -454,7 +454,7 @@ export class HostPresence implements DurableObject {
 
       // GET /tunnels -> { host, tunnels:[slug...], online, agents, ... }
       if (path === "/tunnels" || path.endsWith("/tunnels")) {
-        return json({ host, tunnels: this.tunnelSlugs(), ...this.snapshot(host) });
+        return json(this.snapshot(host));
       }
     }
 
