@@ -90,8 +90,7 @@ export function ProvidersPage({ providers, tunnels, onAdd, onToggle, onUpdate, o
     <div className="container">
       <div className="page-head">
         <div>
-          <h1>Providers</h1>
-          <p className="muted">{providers.length === 0 ? "No providers yet." : `${providers.length} provider(s).`}</p>
+          <h1 className="page-title">Providers <span className="badge">{providers.length}</span></h1>
         </div>
         <button type="button" className="btn btn-primary" onClick={() => setModalOpen(true)}>
           Add provider

@@ -186,8 +186,7 @@ export function HostsPage({ hosts, tunnels, onAdd, onUpdate, onRemove }: HostsPa
     <div className="container">
       <div className="page-head">
         <div>
-          <h1>Hosts</h1>
-          <p className="muted">{hosts.length === 0 ? "No hosts yet." : `${hosts.length} host(s).`}</p>
+          <h1 className="page-title">Hosts <span className="badge">{hosts.length}</span></h1>
         </div>
         <button type="button" className="btn btn-primary" onClick={() => setModalOpen(true)}>
           Add host

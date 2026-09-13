@@ -409,8 +409,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     <div className="container">
       <div className="page-head">
         <div>
-          <h1>Tunnels</h1>
-          <p className="muted">{tunnels.length === 0 ? "No tunnels yet." : `${tunnels.length} tunnel(s).`}</p>
+          <h1 className="page-title">Tunnels <span className="badge">{tunnels.length}</span></h1>
         </div>
         <button type="button" className="btn btn-primary" onClick={openModal}>
           Add tunnel
