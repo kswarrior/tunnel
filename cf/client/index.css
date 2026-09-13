@@ -606,6 +606,16 @@ select.input {
   animation: shimmer 1.3s infinite;
 }
 
+/* Inline shimmer bars for badges / presence pills (no layout shift). */
+.skeleton-inline {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.skeleton-pill {
+  border-radius: 999px;
+}
+
 @keyframes shimmer {
   0% {
     background-position: 200% 0;

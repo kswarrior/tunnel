@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "../components/Modal";
+import { CheckingPills, Skeleton } from "../components/Skeleton";
 import {
   CopyIcon,
   EntityCard,
@@ -81,6 +82,7 @@ function TunnelCard({
   hosts,
   providers,
   registryEntry,
+  registryLoading,
   onToggle,
   onEdit,
   onDelete,
@@ -89,6 +91,7 @@ function TunnelCard({
   hosts: Host[];
   providers: Provider[];
   registryEntry: RegistryEntry | undefined;
+  registryLoading: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -102,8 +105,14 @@ function TunnelCard({
   const tunnelLive = presence.tunnels.includes(tunnel.slug);
   const published = !!registryEntry && registryEntry.host === token;
   const targetDrifted = !!registryEntry && registryEntry.target !== tunnel.target;
+  // Presence starts unknown (WS + first poll pending) — shimmer instead of
+  // flashing "offline" text that flips a moment later. No-host tunnels never
+  // check, so they render their final state immediately.
+  const checking = agentKnown && presence.online === null;
 
-  const statusBadge = tunnelLive ? (
+  const statusBadge = checking ? (
+    <Skeleton width={76} height={22} pill label="Checking live status…" />
+  ) : tunnelLive ? (
     <span className="badge badge-on">Live</span>
   ) : tunnel.active ? (
     <span className="badge">Enabled (local only — not serving)</span>
@@ -148,16 +157,20 @@ function TunnelCard({
       label={statusBadge}
       notes={
         <span>
-          <span className="presence-row">
-            <span className="presence">
-              <span className={`dot ${agentDot}`} aria-hidden="true" />
-              {agentText}
+          {checking ? (
+            <CheckingPills />
+          ) : (
+            <span className="presence-row">
+              <span className="presence">
+                <span className={`dot ${agentDot}`} aria-hidden="true" />
+                {agentText}
+              </span>
+              <span className="presence">
+                <span className={`dot ${tunnelDot}`} aria-hidden="true" />
+                {tunnelText}
+              </span>
             </span>
-            <span className="presence">
-              <span className={`dot ${tunnelDot}`} aria-hidden="true" />
-              {tunnelText}
-            </span>
-          </span>
+          )}
           {tunnel.active && !tunnelLive && (
             <span className="error" style={{ display: "block", marginTop: 4 }}>
               Enabled locally, but the CLI tunnel wss is not connected — /{tunnel.slug} will not show {tunnel.target}.
@@ -165,7 +178,7 @@ function TunnelCard({
               {" (or run the host in host mode to auto-serve every published tunnel)"}.
             </span>
           )}
-          {tunnelLive && !published && (
+          {tunnelLive && !registryLoading && !published && (
             <span className="error" style={{ display: "block", marginTop: 4 }}>
               Tunnel wss is connected, but /{tunnel.slug} is not published for this host — re-save to publish.
             </span>
@@ -447,6 +460,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
               hosts={hosts}
               providers={providers}
               registryEntry={registryBySlug.get(normalizeSlug(t.slug))}
+              registryLoading={registry.loading}
               onToggle={() => handleToggle(t)}
               onEdit={() => openEdit(t)}
               onDelete={() => setPendingDelete(t)}
