@@ -439,12 +439,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
           <p className="error" style={{ margin: 0 }}>Worker registry: {registry.error} — live status may be stale.</p>
         </section>
       )}
-      <section className="card">
-        <p className="muted" style={{ margin: 0 }}>
-          Host mode: run <code>kstunnel --host &lt;id&gt;</code> once on the machine and every published tunnel is
-          served automatically — the worker tells the CLI to open each tunnel wss, no per-tunnel command needed.
-        </p>
-      </section>
 
       {tunnels.length === 0 ? (
         <section className="card">
