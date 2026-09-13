@@ -26,7 +26,7 @@ function isDefaultProvider(p: Provider): boolean {
 }
 
 export function ProvidersPage({ providers, tunnels, onAdd, onToggle, onUpdate, onRemove }: ProvidersPageProps) {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<string>(KINDS[0]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -36,8 +36,13 @@ export function ProvidersPage({ providers, tunnels, onAdd, onToggle, onUpdate, o
   const [editKind, setEditKind] = useState<string>(KINDS[0]);
   const [editError, setEditError] = useState<string | null>(null);
 
-  const closeModal = () => {
-    setModalOpen(false);
+  const openAdd = () => {
+    setAdding(true);
+    setFormError(null);
+  };
+
+  const closeAdd = () => {
+    setAdding(false);
     setName("");
     setKind(KINDS[0]);
     setFormError(null);
@@ -81,10 +86,69 @@ export function ProvidersPage({ providers, tunnels, onAdd, onToggle, onUpdate, o
       return;
     }
     onAdd(newProvider(name, kind));
-    closeModal();
+    closeAdd();
   };
 
   const pendingInUse = pendingDelete ? tunnels.filter((t) => t.providerId === pendingDelete.id) : [];
+
+  if (adding) {
+    return (
+      <div className="container">
+        <div className="page-head">
+          <div>
+            <h1>Add provider</h1>
+          </div>
+          <button type="button" className="btn" onClick={closeAdd}>
+            Back
+          </button>
+        </div>
+
+        <section className="card">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAdd();
+            }}
+          >
+            <label className="label" htmlFor="provider-name">Name</label>
+            <input
+              id="provider-name"
+              className="input"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="My Workers account"
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <label className="label" htmlFor="provider-kind">Type</label>
+            <select
+              id="provider-kind"
+              className="input"
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+            >
+              {KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+            {formError && <p className="error">{formError}</p>}
+            <div className="row">
+              <button type="button" className="btn" onClick={closeAdd}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary">
+                Save
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="container">
@@ -92,7 +156,7 @@ export function ProvidersPage({ providers, tunnels, onAdd, onToggle, onUpdate, o
         <div>
           <h1 className="page-title">Providers <span className="badge">{providers.length}</span></h1>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setModalOpen(true)}>
+        <button type="button" className="btn btn-primary" onClick={openAdd}>
           Add provider
         </button>
       </div>
@@ -142,49 +206,6 @@ export function ProvidersPage({ providers, tunnels, onAdd, onToggle, onUpdate, o
           ))}
         </div>
       )}
-
-      <Modal open={modalOpen} title="Add provider" onClose={closeModal}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleAdd();
-          }}
-        >
-          <label className="label" htmlFor="provider-name">Name</label>
-          <input
-            id="provider-name"
-            className="input"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="My Workers account"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <label className="label" htmlFor="provider-kind">Type</label>
-          <select
-            id="provider-kind"
-            className="input"
-            value={kind}
-            onChange={(e) => setKind(e.target.value)}
-          >
-            {KINDS.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-          {formError && <p className="error">{formError}</p>}
-          <div className="row">
-            <button type="button" className="btn" onClick={closeModal}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary">
-              Save
-            </button>
-          </div>
-        </form>
-      </Modal>
 
       <Modal open={pendingEdit !== null} title="Edit provider" onClose={closeEdit}>
         <form

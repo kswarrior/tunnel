@@ -814,7 +814,12 @@ export class TunnelRegistry implements DurableObject {
       }
       const slug = normalizeSlug(typeof body["slug"] === "string" ? (body["slug"] as string) : "");
       if (!isValidSlug(slug)) {
-        return json({ error: "invalid slug (want 2-32 chars: a-z, 0-9, hyphen, like /hello)" }, 400);
+        return json({ error: "invalid slug (want 2-32 chars: a-z, 0-9, hyphen, like hello)" }, 400);
+      }
+      // "assets" would shadow the frontend's /assets/* files on the legacy
+      // /<slug> route — refuse it at publish time with a clear error.
+      if (slug === "assets") {
+        return json({ error: 'slug "assets" is reserved (it would shadow the web UI files)' }, 400);
       }
       const host = typeof body["host"] === "string" ? (body["host"] as string).trim() : "";
       // Require a real host id: an entry with host="" can never proxy
@@ -1200,7 +1205,7 @@ export default {
       const host = requireHost(url);
       const slug = normalizeSlug(url.searchParams.get("slug"));
       if (!host) return json({ error: "missing or invalid ?host=" }, 400);
-      if (!isValidSlug(slug)) return json({ error: "missing or invalid ?slug= (want like /hello)" }, 400);
+      if (!isValidSlug(slug)) return json({ error: "missing or invalid ?slug= (want slug like hello)" }, 400);
       if (!env.HOST_PRESENCE) return json({ error: "presence not configured" }, 500);
       const upgrade = request.headers.get("Upgrade") || request.headers.get("upgrade");
       if (!upgrade || upgrade.toLowerCase() !== "websocket") {

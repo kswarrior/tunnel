@@ -313,6 +313,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     if (!isTunnelName(v.name)) return "Name must be 2-32 chars: a-z, 0-9, hyphen.";
     if (!isSlug(v.slug)) return "Slug must look like hello (public at /!tunnel=hello).";
     const cleanSlug = normalizeSlug(v.slug);
+    if (cleanSlug === "assets") return 'Slug "assets" is reserved (it would shadow the web UI files).';
     if (tunnels.some((t) => t.id !== ignoreId && normalizeSlug(t.slug) === cleanSlug)) {
       return `Slug ${cleanSlug} (/!tunnel=${cleanSlug}) is already used by another tunnel.`;
     }
@@ -453,14 +454,14 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
               <div>
                 <label className="label" htmlFor="tunnel-slug">Slug (public at /!tunnel=…)</label>
                 <input
-                  id="tunnel-slug"
-                  className="input"
-                  type="text"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="/hello"
-                  value={slug}
-                  onChange={(e) => setSlug(e.target.value)}
+                id="tunnel-slug"
+                className="input"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="hello"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
                 />
               </div>
               <div>
@@ -527,7 +528,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
             </div>
             {formError && <p className="error">{formError}</p>}
             <p className="muted" style={{ fontSize: 12 }}>
-              Visiting <code>/{normalizeSlug(slug || name) || "hello"}</code> shows <code>{target || "127.0.0.1:4757"}</code> of
+              Visiting <code>/!tunnel={normalizeSlug(slug || name) || "hello"}</code> shows <code>{target || "127.0.0.1:4757"}</code> of
               that host — proxied fullscreen via wss (cli → workers → you). One wss per tunnel + one main wss
               (cf ↔ cli) for control.
             </p>
