@@ -1,5 +1,13 @@
 import { useState } from "react";
 import { Modal } from "../components/Modal";
+import {
+  EntityCard,
+  PencilIcon,
+  PlayIcon,
+  StopIcon,
+  TrashIcon,
+  TunnelIcon,
+} from "../components/EntityCard";
 import { isTarget, isTunnelName, newTunnel } from "./store";
 import type { Tunnel } from "./types";
 
@@ -7,15 +15,20 @@ interface TunnelsPageProps {
   tunnels: Tunnel[];
   onAdd: (t: Tunnel) => void;
   onToggle: (id: string) => void;
+  onUpdate: (id: string, patch: Partial<Tunnel>) => void;
   onRemove: (id: string) => void;
 }
 
-export function TunnelsPage({ tunnels, onAdd, onToggle, onRemove }: TunnelsPageProps) {
+export function TunnelsPage({ tunnels, onAdd, onToggle, onUpdate, onRemove }: TunnelsPageProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Tunnel | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<Tunnel | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editTarget, setEditTarget] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
 
   const closeModal = () => {
     setModalOpen(false);

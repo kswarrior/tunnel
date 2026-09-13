@@ -277,6 +277,103 @@ body {
   gap: 8px;
 }
 
+/* ---------- Shared entity card (all pages) ----------
+   Row 1: ICON + NAME ........ LABEL (status tag, right)
+   Row 2: NOTES .............. ACTIONS (icon-only buttons, right) */
+
+.entity-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.entity-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+}
+
+.entity-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.entity-label {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.entity-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  min-width: 0;
+}
+
+.entity-notes {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.entity-notes .code {
+  margin-top: 0;
+}
+
+.entity-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon-only-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease);
+}
+
+.icon-only-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.icon-only-btn:active {
+  transform: scale(0.94);
+}
+
+.icon-only-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-ring);
+}
+
+.icon-only-btn.danger:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: var(--danger);
+}
+
 .badge {
   font-size: 12px;
   font-weight: 600;
