@@ -30,7 +30,7 @@ export function isTunnelName(value: string): boolean {
 
 /** Slug like hello (public at /!tunnel=hello) — stored without any prefix. */
 export function normalizeSlug(value: string): string {
-  return value.trim().replace(/^\/+/, "").toLowerCase();
+  return value.trim().replace(/^\/+/, "").replace(/^!tunnel=/i, "").toLowerCase();
 }
 
 export function isSlug(value: string): boolean {

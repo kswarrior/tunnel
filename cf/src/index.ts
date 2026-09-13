@@ -1447,10 +1447,19 @@ export default {
         let maybeSlug = "";
         let rest = "/";
         let isNewForm = false;
-        const firstLower = segs[0].toLowerCase();
+        // Some clients/proxies percent-encode the `=` (legal): accept both
+        // /!tunnel=ks and /!tunnel%3Dks by matching the decoded segment.
+        // Slice the DECODED string — slicing the raw one would keep `%3D`.
+        let firstDecoded = segs[0];
+        try {
+          firstDecoded = decodeURIComponent(segs[0]);
+        } catch {
+          // keep raw on malformed sequences
+        }
+        const firstLower = firstDecoded.toLowerCase();
         if (firstLower === "!tunnel" || firstLower.startsWith("!tunnel=")) {
           isNewForm = true;
-          maybeSlug = normalizeSlug(firstLower.startsWith("!tunnel=") ? segs[0].slice(8) : "");
+          maybeSlug = normalizeSlug(firstLower.startsWith("!tunnel=") ? firstDecoded.slice(8) : "");
           rest = segs.length > 1 ? "/" + segs.slice(1).join("/") : "/";
           if (!isValidSlug(maybeSlug)) {
             const text =

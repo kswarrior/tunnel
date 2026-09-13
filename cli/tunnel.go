@@ -47,10 +47,15 @@ type TunnelResponse struct {
 	BodyBase64 string            `json:"bodyBase64"`
 }
 
-// NormalizeSlug strips leading slashes and lowercases (" /Hello " -> "hello").
+// NormalizeSlug strips leading slashes, an optional "!tunnel=" public-URL
+// prefix (so pasting /!tunnel=hello works), and lowercases.
 func NormalizeSlug(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimLeft(s, "/")
+	s = strings.TrimSpace(s)
+	if len(s) >= 8 && strings.EqualFold(s[:8], "!tunnel=") {
+		s = s[8:]
+	}
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
