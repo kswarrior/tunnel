@@ -89,6 +89,35 @@ function registryStub(env: Env): DurableObjectStub {
   return env.TUNNEL_REGISTRY.get(id);
 }
 
+/**
+ * Push the desired-tunnel list for one host into its HostPresence DO, which
+ * persists it and broadcasts {"type":"tunnel-spec",...} to agent sockets.
+ * Called (best-effort) after every registry mutation so a CLI in host mode
+ * (`kstunnel --host <id>`) opens/closes tunnel sockets as users
+ * create/edit/delete tunnels in the web UI.
+ */
+async function pushTunnelSpec(env: Env, host: string): Promise<void> {
+  if (!isValidHost(host)) return;
+  try {
+    const reg = registryStub(env);
+    const r = await reg.fetch("https://registry/list");
+    if (!r.ok) return;
+    const data = (await r.json()) as { tunnels?: TunnelEntry[] };
+    const tunnels = (Array.isArray(data.tunnels) ? data.tunnels : [])
+      .filter((e) => e && e.host === host && isValidSlug(normalizeSlug(e.slug)))
+      .map((e) => ({ slug: normalizeSlug(e.slug), target: (e.target ?? "").trim() }))
+      .filter((e) => !!e.target);
+    const stub = stubFor(env, host);
+    await stub.fetch("https://presence/tunnels/spec", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tunnels }),
+    });
+  } catch {
+    // best-effort: the CLI also polls the registry every 30s as fallback
+  }
+}
+
 export type TunnelEntry = {
   slug: string;
   host: string;
@@ -228,6 +257,10 @@ export class HostPresence implements DurableObject {
   private ctx: DurableObjectState;
   private host: string = "unknown";
   private decision: ConfigDecision = "pending";
+  // Desired tunnels for host mode: what the CLI should serve right now.
+  // Set by the worker entrypoint after every registry mutation (users
+  // create/edit/delete in the web UI) and pushed to agent sockets.
+  private desired: TunnelSpecEntry[] = [];
   // Pending visitor -> CLI tunnel requests, keyed by request id.
   // In-memory only: eviction drops them and visitors get a 504.
   private pending = new Map<string, { resolve: (data: unknown) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -241,6 +274,16 @@ export class HostPresence implements DurableObject {
         if (typeof stored === "string" && stored) this.host = stored;
         const dec = await ctx.storage.get<string>("decision");
         if (dec === "allowed" || dec === "denied" || dec === "pending") this.decision = dec;
+        const spec = await ctx.storage.get<TunnelSpecEntry[]>("desiredTunnels");
+        if (Array.isArray(spec)) {
+          const clean: TunnelSpecEntry[] = [];
+          for (const e of spec.slice(0, 100)) {
+            const slug = normalizeSlug(typeof e?.slug === "string" ? e.slug : "");
+            const target = typeof e?.target === "string" ? e.target.trim() : "";
+            if (isValidSlug(slug) && target) clean.push({ slug, target });
+          }
+          this.desired = clean;
+        }
       } catch {
         // ignore
       }
@@ -328,6 +371,46 @@ export class HostPresence implements DurableObject {
         // ignore dead sockets
       }
     }
+  }
+
+  private specMessage(host: string): SpecMessage {
+    return {
+      type: "tunnel-spec",
+      host,
+      tunnels: this.desired,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  private broadcastSpec(host: string): void {
+    const msg = JSON.stringify(this.specMessage(host));
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(msg);
+      } catch {
+        // dead socket — runtime will clean it up via close/error events
+      }
+    }
+  }
+
+  /** Store the desired tunnel list (from the registry) and push it to agents. */
+  private async setDesired(host: string, tunnels: TunnelSpecEntry[]): Promise<void> {
+    const clean: TunnelSpecEntry[] = [];
+    const seen = new Set<string>();
+    for (const t of tunnels.slice(0, 100)) {
+      const slug = normalizeSlug(t.slug);
+      const target = (t.target ?? "").trim();
+      if (!isValidSlug(slug) || !target || seen.has(slug)) continue;
+      seen.add(slug);
+      clean.push({ slug, target });
+    }
+    this.desired = clean;
+    try {
+      await this.ctx.storage.put("desiredTunnels", clean);
+    } catch {
+      // ignore
+    }
+    this.broadcastSpec(host);
   }
 
   private async setDecision(host: string, decision: ConfigDecision): Promise<DecisionMessage> {
@@ -466,6 +549,30 @@ export class HostPresence implements DurableObject {
         return json(data);
       }
 
+      // GET /tunnels/spec -> desired tunnels for host mode { host, tunnels }
+      // POST /tunnels/spec {tunnels:[{slug,target}]} -> store + push to agents.
+      // Called by the worker entrypoint after every registry mutation so a
+      // CLI in host mode (`kstunnel --host <id>`) opens/closes tunnel sockets
+      // as users create/edit/delete tunnels — no per-tunnel CLI needed.
+      if (path === "/tunnels/spec" || path.endsWith("/tunnels/spec")) {
+        if (request.method === "POST" || request.method === "PUT" || request.method === "PATCH") {
+          let list: TunnelSpecEntry[];
+          try {
+            const body = (await request.json()) as { tunnels?: unknown };
+            if (!Array.isArray(body?.tunnels)) return json({ error: "invalid tunnels (want [{slug,target}])" }, 400);
+            list = (body.tunnels as Record<string, unknown>[]).map((e) => ({
+              slug: typeof e?.["slug"] === "string" ? (e["slug"] as string) : "",
+              target: typeof e?.["target"] === "string" ? (e["target"] as string) : "",
+            }));
+          } catch {
+            return json({ error: "invalid json" }, 400);
+          }
+          await this.setDesired(host, list);
+          return json({ ok: true, host, tunnels: this.desired });
+        }
+        return json({ host, tunnels: this.desired, timestamp: new Date().toISOString() });
+      }
+
       // GET /tunnels -> { host, tunnels:[slug...], online, agents, ... }
       if (path === "/tunnels" || path.endsWith("/tunnels")) {
         return json(this.snapshot(host));
@@ -521,6 +628,13 @@ export class HostPresence implements DurableObject {
       } catch {
         // ignore send race
       }
+      // Host-mode CLIs need the desired tunnels immediately: a CLI that
+      // connects after the user already created tunnels still learns them.
+      try {
+        server.send(JSON.stringify(this.specMessage(wsHost)));
+      } catch {
+        // ignore send race
+      }
       if (tag === "agent") this.broadcast(wsHost);
 
       return new Response(null, { status: 101, webSocket: client });
@@ -570,6 +684,16 @@ export class HostPresence implements DurableObject {
             headers: (obj["headers"] as Record<string, string>) ?? {},
             bodyBase64: typeof obj["bodyBase64"] === "string" ? obj["bodyBase64"] : "",
           });
+        }
+        return;
+      }
+      // Host-mode CLI asks for the desired tunnels (pull, e.g. right after
+      // connecting): answer it directly without broadcasting.
+      if (obj && (obj["type"] === "get-tunnels" || obj["type"] === "sync-tunnels")) {
+        try {
+          ws.send(JSON.stringify(this.specMessage(this.host)));
+        } catch {
+          // ignore
         }
         return;
       }
