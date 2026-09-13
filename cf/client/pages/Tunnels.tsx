@@ -381,11 +381,18 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
   // Enabling is local-only — it never starts serving by itself. Re-publish on
   // enable so a previously failed publish (worker offline, host picked later)
   // heals: /<slug> then gives a clear 502 "tunnel offline, run CLI…" instead
-  // of falling back to the web UI itself.
+  // of falling back to the web UI itself. Disabling unpublishes so a host-mode
+  // CLI (`kstunnel --host <id>`) closes the tunnel socket by itself.
   const handleToggle = (t: Tunnel) => {
     const turningOn = !t.active;
     onToggle(t.id);
-    if (!turningOn) return;
+    if (!turningOn) {
+      void unpublishTunnel(t.slug).then(() => {
+        setPageNotice(`Stopped — /${t.slug} unpublished. A host-mode CLI closes it automatically.`);
+        registry.refresh();
+      });
+      return;
+    }
     const updated = { ...t, active: true };
     publishTunnel(updated, hosts)
       .then(() => {

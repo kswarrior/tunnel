@@ -14,7 +14,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [--help] [--version] [--config:host] [--host ID --tunnel SLUG --target HOST:PORT] [--worker URL]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s [--help] [--version] [--config:host] [--host ID [--tunnel SLUG --target HOST:PORT]] [--worker URL]\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "  --config:host    Generate a random host token, print the\n")
 	fmt.Fprintf(os.Stderr, "                   https://<worker>/!config?host=<random> Allow URL,\n")
@@ -24,6 +24,10 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "  --host ID        Host id (the CLI token). With --config:host it reuses\n")
 	fmt.Fprintf(os.Stderr, "                   the id instead of generating a random one. With --tunnel\n")
 	fmt.Fprintf(os.Stderr, "                   it selects which host serves the tunnel.\n")
+	fmt.Fprintf(os.Stderr, "                   Alone (no --tunnel) it runs HOST MODE: hold the main\n")
+	fmt.Fprintf(os.Stderr, "                   WSS and auto-serve every tunnel users create for this\n")
+	fmt.Fprintf(os.Stderr, "                   host — the worker pushes tunnel-spec over the main wss,\n")
+	fmt.Fprintf(os.Stderr, "                   no per-tunnel command needed.\n")
 	fmt.Fprintf(os.Stderr, "  --tunnel SLUG    Public path slug like hello for /hello (2-32 chars:\n")
 	fmt.Fprintf(os.Stderr, "                   a-z, 0-9, hyphen). Creates ONE per-tunnel WSS for data.\n")
 	fmt.Fprintf(os.Stderr, "                   Run one process per tunnel (each = one wss).\n")
@@ -40,6 +44,11 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "  # 2) serve local :4757 at https://<worker>/hello (main wss + tunnel wss):\n")
 	fmt.Fprintf(os.Stderr, "  %s --host <id-from-step-1> --tunnel hello --target 127.0.0.1:4757\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  # visit /hello -> fullscreen 127.0.0.1:4757 via wss (cli -> workers -> you)\n")
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "  # 3) host mode: auto-serve every tunnel users create for <id>:\n")
+	fmt.Fprintf(os.Stderr, "  %s --host <id-from-step-1>\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  # the worker pushes tunnel-spec over the main wss; the CLI opens\n")
+	fmt.Fprintf(os.Stderr, "  # one tunnel wss per published tunnel by itself\n")
 }
 
 func isConfigHostFlag(arg string) bool {
@@ -161,8 +170,9 @@ func main() {
 	}
 
 	serveTunnel := strings.TrimSpace(tunnelSlug) != "" || strings.TrimSpace(tunnelTarget) != ""
+	hostMode := strings.TrimSpace(fixedHost) != "" && !serveTunnel && !configHost
 
-	if !configHost && !serveTunnel {
+	if !configHost && !serveTunnel && !hostMode {
 		fmt.Println(cli.Hello())
 		return
 	}
@@ -208,6 +218,23 @@ func main() {
 	defer stop()
 	logf := func(format string, a ...any) {
 		fmt.Fprintf(os.Stderr, format+"\n", a...)
+	}
+
+	// Host mode: hold the MAIN wss and auto-serve whatever tunnels users
+	// create for this host (worker pushes tunnel-spec over the main wss).
+	if hostMode {
+		fmt.Printf("Host: %s (host mode)\n", hostID)
+		fmt.Printf("Worker: %s\n", strings.TrimRight(workerBase, "/"))
+		fmt.Fprintf(os.Stderr, "Watching for tunnels — create one in the web UI and it is served automatically (Ctrl+C to stop)...\n")
+		if err := cli.RunHost(ctx, workerBase, hostID, logf); err != nil && err != context.Canceled {
+			if errors.Is(err, cli.ErrDenied) {
+				fmt.Fprintf(os.Stderr, "Canceled by browser — host %s was not saved.\n", hostID)
+				os.Exit(1)
+			}
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Tunnel-serve mode: hold BOTH sockets —
