@@ -33,6 +33,10 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -134,12 +138,13 @@ body {
 }
 
 .nav-item {
+  position: relative;
   min-height: 44px;
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 0 12px;
+  padding: 0 12px 0 16px;
   font-size: 16px;
   background: transparent;
   border: 1px solid transparent;
@@ -148,18 +153,60 @@ body {
   cursor: pointer;
   text-align: left;
   transition: background var(--duration-fast) ease,
-    color var(--duration-fast) ease;
+    color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease);
+  animation: navIn var(--duration-normal) var(--ease) backwards;
+}
+
+/* Staggered sidebar entrance */
+.sidebar .nav-item:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.sidebar .nav-item:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.sidebar .nav-item:nth-child(3) {
+  animation-delay: 90ms;
+}
+
+.sidebar .nav-item:nth-child(4) {
+  animation-delay: 135ms;
+}
+
+.sidebar .nav-item:nth-child(5) {
+  animation-delay: 180ms;
+}
+
+.nav-item::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--primary);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform var(--duration-normal) var(--ease);
 }
 
 .nav-item:hover {
   background: var(--surface-2);
   color: var(--text);
+  transform: translateX(2px);
 }
 
 .nav-item.active {
   background: var(--primary-bg);
   color: var(--primary-active);
   border-color: var(--border);
+}
+
+.nav-item.active::before {
+  transform: scaleY(1);
 }
 
 .nav-item:focus-visible {
@@ -176,7 +223,7 @@ body {
 .container {
   max-width: 1200px;
   margin: 0 auto;
-  animation: fadeUp var(--duration-normal) var(--ease) both;
+  animation: pageIn 260ms var(--ease) both;
 }
 
 .narrow {
@@ -239,6 +286,24 @@ body {
   gap: 4px;
   transition: transform var(--duration-fast) var(--ease),
     border-color var(--duration-fast) ease;
+  animation: fadeUp var(--duration-normal) var(--ease) backwards;
+}
+
+/* Staggered stat entrance */
+.stats > .stat-card:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.stats > .stat-card:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.stats > .stat-card:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.stats > .stat-card:nth-child(4) {
+  animation-delay: 180ms;
 }
 
 .stat-card:hover {
@@ -274,7 +339,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  animation: fadeUp var(--duration-normal) var(--ease) both;
+  animation: fadeUp var(--duration-normal) var(--ease) backwards;
   transition: transform var(--duration-fast) var(--ease),
     border-color var(--duration-fast) ease;
 }
@@ -282,6 +347,39 @@ body {
 .item-card:hover {
   transform: translateY(-2px);
   border-color: var(--border-strong);
+}
+
+/* Staggered card entrance */
+.cards > .item-card:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.cards > .item-card:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.cards > .item-card:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.cards > .item-card:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+.cards > .item-card:nth-child(5) {
+  animation-delay: 160ms;
+}
+
+.cards > .item-card:nth-child(6) {
+  animation-delay: 200ms;
+}
+
+.cards > .item-card:nth-child(7) {
+  animation-delay: 240ms;
+}
+
+.cards > .item-card:nth-child(n + 8) {
+  animation-delay: 280ms;
 }
 
 /* ---------- Shared entity card (all pages) ----------
@@ -336,6 +434,7 @@ body {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  animation: fadeUp var(--duration-fast) var(--ease) both;
 }
 
 .presence {
@@ -625,6 +724,28 @@ select.input {
   }
 }
 
+@keyframes navIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -738,6 +859,8 @@ select.input {
   display: inline-block;
   flex: 0 0 10px;
   background: var(--text-faint);
+  transition: background-color var(--duration-normal) ease,
+    box-shadow var(--duration-normal) ease;
 }
 
 .dot-on {
