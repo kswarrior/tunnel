@@ -1,8 +1,8 @@
 /**
- * Backend (Cloudflare Worker) — Hello World
+ * Backend (Cloudflare Worker) — KS Tunnel
  *
  * Routes:
- *   GET /api/hello  -> { message: "Hello World from backend", ... }
+ *   GET /api/hello  -> { message: "KS Tunnel online", ... }
  *   GET /api/health -> { ok: true }
  *   *               -> serves static frontend assets (dist/) with SPA fallback
  */
@@ -17,7 +17,7 @@ export default {
 
     if (url.pathname === "/api/hello") {
       return Response.json({
-        message: "Hello World from backend",
+        message: "KS Tunnel online",
         timestamp: new Date().toISOString(),
       });
     }

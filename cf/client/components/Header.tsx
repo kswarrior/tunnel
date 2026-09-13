@@ -24,7 +24,7 @@ export function Header({ sidebarOpen, onToggleSidebar, statusText }: HeaderProps
           </svg>
         )}
       </button>
-      <div className="brand">CF Hello World</div>
+      <div className="brand">KS Tunnel</div>
       <div className="header-spacer" />
       <span className="header-status">{statusText}</span>
     </header>

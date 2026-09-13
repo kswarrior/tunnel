@@ -1,4 +1,4 @@
-export type NavKey = "home" | "backend" | "health";
+export type NavKey = "home" | "tunnels" | "providers" | "settings";
 
 interface SidebarProps {
   active: NavKey;
@@ -8,8 +8,9 @@ interface SidebarProps {
 
 const ITEMS: Array<{ key: NavKey; label: string }> = [
   { key: "home", label: "Home" },
-  { key: "backend", label: "Backend" },
-  { key: "health", label: "Health" },
+  { key: "tunnels", label: "Tunnels" },
+  { key: "providers", label: "Providers" },
+  { key: "settings", label: "Settings" },
 ];
 
 export function Sidebar({ active, open, onNavigate }: SidebarProps) {
