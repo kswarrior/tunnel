@@ -36,18 +36,37 @@ export function isHostname(value: string): boolean {
   return /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(value.trim());
 }
 
-function useCollection<T extends { id: string }>(key: string) {
-  const [items, setItems] = useState<T[]>(() => read<T>(key));
+function useCollection<T extends { id: string }>(
+  key: string,
+  isDuplicate?: (prev: T, next: T) => boolean,
+) {
+  const [items, setItems] = useState<T[]>(() => {
+    const initial = read<T>(key);
+    // Heal legacy duplicates already sitting in localStorage
+    // (e.g. two cards for the same hostname after Allow).
+    if (!isDuplicate || initial.length < 2) return initial;
+    const healed: T[] = [];
+    for (const item of initial) {
+      if (!healed.some((h) => h.id === item.id || isDuplicate(h, item))) healed.push(item);
+    }
+    if (healed.length !== initial.length) write(key, healed);
+    return healed;
+  });
 
   const add = useCallback(
     (item: T) => {
       setItems((prev) => {
+        // Functional update = always fresh: back-to-back adds
+        // (Allow click + allowed-watcher effect) can't both slip through.
+        if (prev.some((p) => p.id === item.id || (isDuplicate && isDuplicate(p, item)))) {
+          return prev;
+        }
         const next = [...prev, item];
         write(key, next);
         return next;
       });
     },
-    [key],
+    [key, isDuplicate],
   );
 
   const remove = useCallback(
@@ -92,7 +111,12 @@ export function useTunnels() {
 }
 
 export function useHosts() {
-  return useCollection<Host>("ks-hosts");
+  // Same hostname (case-insensitive) = same host, even with different ids.
+  return useCollection<Host>("ks-hosts", sameHostname);
+}
+
+function sameHostname(a: Host, b: Host): boolean {
+  return a.hostname.trim().toLowerCase() === b.hostname.trim().toLowerCase();
 }
 
 export function useProviders() {
