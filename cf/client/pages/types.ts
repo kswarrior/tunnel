@@ -6,30 +6,25 @@ export type WorkerStatus = {
   healthy: boolean | null;
 };
 
-export type TunnelSettings = {
-  serverUrl: string;
-  defaultTunnel: string;
+export type Tunnel = {
+  id: string;
+  name: string;
+  target: string;
+  active: boolean;
+  createdAt: number;
 };
 
-const SETTINGS_KEY = "ks-tunnel-settings";
+export type Host = {
+  id: string;
+  hostname: string;
+  tunnel: string;
+  createdAt: number;
+};
 
-export function loadSettings(): TunnelSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { serverUrl: "", defaultTunnel: "exampletunnel" };
-    const parsed = JSON.parse(raw) as Partial<TunnelSettings>;
-    return {
-      serverUrl: typeof parsed.serverUrl === "string" ? parsed.serverUrl : "",
-      defaultTunnel:
-        typeof parsed.defaultTunnel === "string" && parsed.defaultTunnel.trim() !== ""
-          ? parsed.defaultTunnel
-          : "exampletunnel",
-    };
-  } catch {
-    return { serverUrl: "", defaultTunnel: "exampletunnel" };
-  }
-}
-
-export function saveSettings(value: TunnelSettings): void {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(value));
-}
+export type Provider = {
+  id: string;
+  name: string;
+  kind: string;
+  active: boolean;
+  createdAt: number;
+};
