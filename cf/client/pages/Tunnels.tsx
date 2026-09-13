@@ -63,6 +63,14 @@ async function publishTunnel(t: Tunnel, hosts: Host[]): Promise<void> {
   }
 }
 
+async function unpublishTunnel(slug: string): Promise<void> {
+  try {
+    await fetch(`/api/tunnels/${encodeURIComponent(slug)}`, { method: "DELETE" });
+  } catch {
+    // ignore
+  }
+}
+
 function tunnelWSS(t: Tunnel, hosts: Host[]): string {
   const host = hostToken(hosts, t.hostId);
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -492,7 +500,10 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
             type="button"
             className="btn btn-primary"
             onClick={() => {
-              if (pendingDelete) onRemove(pendingDelete.id);
+              if (pendingDelete) {
+                void unpublishTunnel(pendingDelete.slug);
+                onRemove(pendingDelete.id);
+              }
               setPendingDelete(null);
             }}
           >
