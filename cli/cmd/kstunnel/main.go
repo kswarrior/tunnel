@@ -98,7 +98,7 @@ func main() {
 		}
 		hostID = id
 	} else if !kstunnel.IsValidHostID(hostID) {
-		fmt.Fprintf(os.Stderr, "error: invalid --host %q (want [A-Za-z0-9_-]{6,64})\n", hostID)
+		fmt.Fprintf(os.Stderr, "error: invalid --host %q (want [A-Za-z0-9_-]{5,64})\n", hostID)
 		os.Exit(1)
 	}
 

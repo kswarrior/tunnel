@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const CONFIG_HOST_RE = /^[A-Za-z0-9_-]{6,64}$/;
+export const CONFIG_HOST_RE = /^[A-Za-z0-9_-]{5,64}$/;
 
 export function isConfigHostId(value: string | null | undefined): value is string {
   return !!value && CONFIG_HOST_RE.test(value.trim());

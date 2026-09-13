@@ -30,10 +30,10 @@ const DefaultWorkerBase = "https://tunnel.kswarriorpro.workers.dev"
 // wsGUID is the RFC 6455 magic GUID.
 const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-const hostAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+const hostAlphabet = "abcdefghijklmnopqrstuvwxyz"
 
 // hostIDLength is the number of random chars in `?host=` tokens.
-const hostIDLength = 16
+const hostIDLength = 5
 
 // Hello returns a hello-world string. Placeholder until tunnel agent lands.
 func Hello() string {
@@ -51,9 +51,9 @@ func WorkerBaseURL() string {
 	return DefaultWorkerBase
 }
 
-// IsValidHostID reports whether s is a valid `?host=` token ([A-Za-z0-9_-]{6,64}).
+// IsValidHostID reports whether s is a valid `?host=` token ([A-Za-z0-9_-]{5,64}).
 func IsValidHostID(s string) bool {
-	if len(s) < 6 || len(s) > 64 {
+	if len(s) < 5 || len(s) > 64 {
 		return false
 	}
 	for _, c := range s {
@@ -65,7 +65,7 @@ func IsValidHostID(s string) bool {
 	return true
 }
 
-// GenerateHostID creates a fresh random host token (16x [a-z0-9]).
+// GenerateHostID creates a fresh random host token (5x [a-z]).
 // It is random on every call — never fixed — so each
 // `./kstunnel --config:host` run yields a new `!config?host=` URL.
 func GenerateHostID() (string, error) {

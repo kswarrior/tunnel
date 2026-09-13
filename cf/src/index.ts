@@ -20,7 +20,7 @@ export interface Env {
   HOST_PRESENCE: DurableObjectNamespace;
 }
 
-const HOST_RE = /^[A-Za-z0-9_-]{6,64}$/;
+const HOST_RE = /^[A-Za-z0-9_-]{5,64}$/;
 
 function isValidHost(value: string | null): value is string {
   return !!value && HOST_RE.test(value);
