@@ -5,8 +5,13 @@ compatibility_flags = ["nodejs_compat"]
 
 # Frontend built by `npm run build` (Vite) into ./dist.
 # Deploy with: npx wrangler deploy
-# NOTE: run `npm run build` before deploy, or set dashboard
-# Build command to `npm install && npm run build`.
+# The [build] step below makes `wrangler deploy` / `wrangler dev` run
+# `npm run build` automatically, so Cloudflare Builds works even when the
+# dashboard Deploy command is just `npx wrangler deploy` (no separate
+# Build command needed — Cloudflare already runs `npm clean-install`).
+[build]
+command = "npm run build"
+
 [assets]
 directory = "./dist"
 not_found_handling = "single-page-application"

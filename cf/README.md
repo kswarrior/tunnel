@@ -12,11 +12,15 @@ Cloudflare Worker + Vite React frontend, deployable with Wrangler.
 ## Your dashboard settings
 
 - Root directory: `/cf/` (this folder)
-- Build command: `None` — change to `npm install && npm run build` so Cloudflare builds the React app, or run `npm run build` locally before deploy
+- Build command: `None` (Cloudflare already runs `npm clean-install`, and
+  `wrangler.toml` `[build] command = "npm run build"` makes
+  `npx wrangler deploy` build `./dist` automatically).
+  Alternatively, set Build command to `npm run build` explicitly.
 - Deploy command: `npx wrangler deploy`
 - Build token: own-auth-app build token
 
-If Build stays `None`, `npx wrangler deploy` deploys whatever is in `./dist`. Commit a fresh build or set a Build command.
+`npx wrangler deploy` now builds `./dist` via the `[build]` step, so the
+`assets.directory does not exist: .../cf/dist` error is gone.
 
 ## Local dev
 
