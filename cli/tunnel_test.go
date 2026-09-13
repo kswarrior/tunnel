@@ -17,11 +17,14 @@ import (
 
 func TestNormalizeSlug(t *testing.T) {
 	cases := map[string]string{
-		"/hello":   "hello",
-		"///hello": "hello",
-		" Hello ":  "hello",
-		"/HELLO":   "hello",
-		"hi-there": "hi-there",
+		"/hello":       "hello",
+		"///hello":      "hello",
+		" Hello ":       "hello",
+		"/HELLO":        "hello",
+		"hi-there":      "hi-there",
+		"!tunnel=hello": "hello",
+		"/!tunnel=hello": "hello",
+		"/!TUNNEL=Hello": "hello",
 	}
 	for in, want := range cases {
 		if got := NormalizeSlug(in); got != want {
