@@ -157,6 +157,20 @@ type DecisionMessage = {
   timestamp: string;
 };
 
+/** One desired tunnel: the CLI must serve local target at public /slug. */
+export type TunnelSpecEntry = {
+  slug: string;
+  target: string;
+};
+
+/** Worker -> CLI over the MAIN agent wss: "serve exactly these tunnels". */
+type SpecMessage = {
+  type: "tunnel-spec";
+  host: string;
+  tunnels: TunnelSpecEntry[];
+  timestamp: string;
+};
+
 function normalizeDecision(value: unknown): ConfigDecision | null {
   if (typeof value !== "string") return null;
   const v = value.trim().toLowerCase();
