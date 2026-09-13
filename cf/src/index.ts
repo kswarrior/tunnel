@@ -9,42 +9,60 @@
  *   POST /api/hosts/:id/allow   -> { host, decision: "allowed", ... } (browser Allow)
  *   POST /api/hosts/:id/deny    -> { host, decision: "denied", ... } (also /decline, /cancel)
  *   POST /api/hosts/:id/decision {decision} -> set pending/allowed/denied
- *   WS  /api/agent/ws?host=ID   -> CLI agent socket (role=agent, waits for decision)
+ *   WS  /api/agent/ws?host=ID   -> MAIN wss: CLI control socket (cf <-> cli talk,
+ *                                  presence + decision + register-tunnel)
  *   WS  /api/hosts/:id/ws       -> browser watcher socket (role=watch, sends decision)
  *   WS  /api/ws?host=ID&role=.. -> generic alias for the two above
  *   GET /api/config?host=ID     -> { host, online, agents, decision, ... }
  *   POST /api/config?host=ID {decision} -> set decision
+ *   WS  /api/tunnels/ws?host=ID&slug=hello[&target=127.0.0.1:4757]
+ *                             -> PER-TUNNEL wss: one socket per tunnel (data plane).
+ *                                CLI opens one per tunnel it serves; visitors'
+ *                                HTTP is bridged over it (cli -> workers -> you).
+ *   GET /api/tunnels            -> list registered tunnels [{slug,host,target,...}]
+ *   POST /api/tunnels {slug,host,target,...} -> register/upsert a tunnel
+ *   GET /api/tunnels/:slug      -> resolve one tunnel
+ *   DELETE /api/tunnels/:slug   -> unregister
+ *   GET /api/hosts/:id/tunnels  -> { host, tunnels:[slug...] } online data sockets
+ *   GET /<slug> , /<slug>/*     -> FULLSCREEN tunnel proxy: returns the local
+ *                                  http://<target>/<rest> bytes verbatim
+ *                                  (status+headers+body, no KS wrapper) via the
+ *                                  per-tunnel wss. e.g. /hello shows 127.0.0.1:4757.
  *   *                           -> serves static frontend assets (dist/) with SPA fallback
  *                                 (`/!config?host=ID` serves index.html; the React app
  *                                 shows the Allow/Cancel page.)
  *
  * Presence is tracked by the HostPresence Durable Object (one instance per
- * host id, via idFromName("host:"+id)). Agents = CLI connections, watchers =
- * browser tabs. Online = at least one agent socket is open.
+ * host id, via idFromName("host:"+id)). Agents = CLI main-wss connections,
+ * watchers = browser tabs. Online = at least one agent socket is open.
+ * Tunnel data sockets live in the same DO with tag `tunnel:<slug>`.
+ * Slug -> host/target mapping lives in the TunnelRegistry DO singleton
+ * (idFromName("tunnels:registry")) so visitor requests (no localStorage)
+ * can resolve /<slug> to the owning host.
  *
- * Config handshake (CLI <-> browser via the DO):
- *   1. CLI generates a 5-letter token, prints /!config?host=<token>,
- *      then holds `WS /api/agent/ws?host=<token>` open. While no browser
- *      has decided, the decision is "pending" (missing/404 counts as
- *      pending = OK, keep waiting — not an error).
- *   2. User opens the /!config link: the React app shows Allow / Cancel
- *      and opens `WS /api/hosts/<token>/ws` (role=watch).
- *   3. Cancel/Decline -> browser sends {"type":"decision","decision":"denied"}
- *      (HTTP POST /api/hosts/<token>/deny as fallback). The DO broadcasts
- *      {"type":"decision","decision":"denied"} to every socket; the CLI
- *      sees it and stops (exits).
- *   4. Allow -> browser sends {"type":"decision","decision":"allowed"}
- *      (HTTP POST /api/hosts/<token>/allow as fallback). The DO broadcasts
- *      "allowed"; the CLI stays connected (alive) and the browser saves
- *      the host into the Hosts page (localStorage).
+ * Traffic shape: cli --wss--> workers --https--> users.
+ *   main wss  (/api/agent/ws)   : control — presence, allow/deny, pings.
+ *   tunnel wss (/api/tunnels/ws): data — one per tunnel, multiplexed by id:
+ *     workers -> cli : {"type":"tunnel-request","id","method","path","headers","bodyBase64"}
+ *     cli -> workers : {"type":"tunnel-response","id","status","headers","bodyBase64"}
  */
 
 export interface Env {
   ASSETS: Fetcher;
   HOST_PRESENCE: DurableObjectNamespace;
+  TUNNEL_REGISTRY: DurableObjectNamespace;
 }
 
 const HOST_RE = /^[A-Za-z0-9_-]{5,64}$/;
+const SLUG_RE = /^[a-z0-9-]{2,32}$/;
+
+function normalizeSlug(value: string | null | undefined): string {
+  return (value ?? "").trim().replace(/^\/+/, "").toLowerCase();
+}
+
+function isValidSlug(value: string | null | undefined): value is string {
+  return !!value && SLUG_RE.test(value);
+}
 
 function isValidHost(value: string | null): value is string {
   return !!value && HOST_RE.test(value);
