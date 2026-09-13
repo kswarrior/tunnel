@@ -565,6 +565,91 @@ select.input {
   }
 }
 
+/* ---------- Host presence dots + !config Allow page ---------- */
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  flex: 0 0 10px;
+  background: var(--text-faint);
+}
+
+.dot-on {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.18);
+  animation: pulseGreen 2s infinite;
+}
+
+.dot-off {
+  background: #dc2626;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
+}
+
+.dot-idle {
+  background: var(--text-faint);
+}
+
+@keyframes pulseGreen {
+  0% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(22, 163, 74, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+  }
+}
+
+.presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.host-name {
+  overflow-wrap: anywhere;
+}
+
+.host-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-card {
+  text-align: center;
+}
+
+.config-host-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.config-code {
+  margin-top: 0;
+  text-align: center;
+}
+
+.config-status {
+  margin: 12px 0 0;
+  font-weight: 600;
+}
+
+.config-hint {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
