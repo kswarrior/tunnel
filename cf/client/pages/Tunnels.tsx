@@ -154,12 +154,18 @@ function TunnelCard({
             <CheckingPills />
           ) : (
             <span className="presence-row">
-              <span className="presence" title={agentText} aria-label={agentText}>
-                <span className={`dot ${agentDot}`} aria-hidden="true" />
+              <span
+                className={`badge${!agentKnown ? "" : agentOnline ? " badge-on" : " badge-off"}`}
+                title={agentText}
+                aria-label={agentText}
+              >
                 Agent
               </span>
-              <span className="presence" title={tunnelText} aria-label={tunnelText}>
-                <span className={`dot ${tunnelDot}`} aria-hidden="true" />
+              <span
+                className={`badge${tunnelLive ? " badge-on" : " badge-off"}`}
+                title={tunnelText}
+                aria-label={tunnelText}
+              >
                 Tunnel
               </span>
             </span>
@@ -189,6 +195,8 @@ function TunnelCard({
           label: tunnel.active ? "Stop" : "Start",
           icon: tunnel.active ? <StopIcon /> : <PlayIcon />,
           onClick: onToggle,
+          danger: tunnel.active,
+          positive: !tunnel.active,
         },
         {
           key: "open",

@@ -187,6 +187,8 @@ export function ProvidersPage({ providers, tunnels, onAdd, onToggle, onUpdate, o
                   label: p.active ? "Disable" : "Enable",
                   icon: <PowerIcon />,
                   onClick: () => onToggle(p.id),
+                  danger: p.active,
+                  positive: !p.active,
                 },
                 {
                   key: "edit",

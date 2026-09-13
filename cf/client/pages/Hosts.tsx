@@ -51,21 +51,6 @@ function HostCard({
   const liveLinked = linked.filter((t) => liveSlugs.includes(t.slug));
   const liveCount = probe ? liveLinked.length : 0;
 
-  const agentDot = !probe || presence.online === null
-    ? "dot-idle"
-    : presence.online === true
-      ? "dot-on"
-      : "dot-off";
-  const tunnelsDot = linked.length === 0
-    ? "dot-idle"
-    : !probe
-      ? "dot-idle"
-      : liveCount === linked.length
-        ? "dot-on"
-        : liveCount > 0
-          ? "dot-on"
-          : "dot-off";
-
   const agentText = !probe
     ? "Agent: saved"
     : presence.online === null
@@ -119,13 +104,19 @@ function HostCard({
             <CheckingPills />
           ) : (
             <span className="presence-row">
-              <span className="presence" title={agentText} aria-label={agentText}>
-                <span className={`dot ${agentDot}`} aria-hidden="true" />
+              <span
+                className={`badge${!probe ? "" : presence.online === true ? " badge-on" : " badge-off"}`}
+                title={agentText}
+                aria-label={agentText}
+              >
                 Agent
               </span>
-              <span className="presence" title={tunnelsText} aria-label={tunnelsText}>
-                <span className={`dot ${tunnelsDot}`} aria-hidden="true" />
-                Tunnels <span className="badge" aria-hidden="true">{tunnelsTag}</span>
+              <span
+                className={`badge${linked.length === 0 || !probe ? "" : liveCount > 0 ? " badge-on" : " badge-off"}`}
+                title={tunnelsText}
+                aria-label={tunnelsText}
+              >
+                Tunnels {tunnelsTag}
               </span>
             </span>
           )}
