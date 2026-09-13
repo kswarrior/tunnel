@@ -33,10 +33,12 @@
  *   GET /api/tunnels/:slug      -> resolve one tunnel
  *   DELETE /api/tunnels/:slug   -> unregister
  *   GET /api/hosts/:id/tunnels  -> { host, tunnels:[slug...] } online data sockets
- *   GET /<slug> , /<slug>/*     -> FULLSCREEN tunnel proxy: returns the local
- *                                  http://<target>/<rest> bytes verbatim
+ *   GET /!tunnel=<slug>[/*]    -> FULLSCREEN tunnel proxy (canonical): returns the
+ *                                  local http://<target>/<rest> bytes verbatim
  *                                  (status+headers+body, no KS wrapper) via the
- *                                  per-tunnel wss. e.g. /hello shows 127.0.0.1:4757.
+ *                                  per-tunnel wss. e.g. /!tunnel=hello shows
+ *                                  127.0.0.1:4757.
+ *   GET /<slug> , /<slug>/*     -> same proxy (legacy form, kept working).
  *   *                           -> serves static frontend assets (dist/) with SPA fallback
  *                                 (`/!config?host=ID` serves index.html; the React app
  *                                 shows the Allow/Cancel page.)
