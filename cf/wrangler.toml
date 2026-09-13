@@ -15,3 +15,10 @@ command = "npm run build"
 [assets]
 directory = "./dist"
 not_found_handling = "single-page-application"
+
+[durable_objects]
+bindings = [{ name = "HOST_PRESENCE", class_name = "HostPresence" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["HostPresence"]
