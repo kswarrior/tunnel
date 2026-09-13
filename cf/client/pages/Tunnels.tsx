@@ -36,16 +36,6 @@ function hostToken(hosts: Host[], hostId: string): string {
   return h ? h.hostname.trim() : "";
 }
 
-function hostName(hosts: Host[], hostId: string): string {
-  const h = hosts.find((x) => x.id === hostId);
-  return h ? h.hostname : "—";
-}
-
-function providerName(providers: Provider[], providerId: string): string {
-  const p = providers.find((x) => x.id === providerId);
-  return p ? p.name : "—";
-}
-
 /** Publish slug -> host mapping so visitors hitting /<slug> can be proxied. */
 async function publishTunnel(t: Tunnel, hosts: Host[]): Promise<void> {
   const host = hostToken(hosts, t.hostId);
@@ -134,30 +124,43 @@ function TunnelCard({
     }
   };
 
+  const agentDot = !agentKnown || presence.online === null
+    ? "dot-idle"
+    : agentOnline
+      ? "dot-on"
+      : "dot-off";
+  const tunnelDot = tunnelLive ? "dot-on" : "dot-off";
+
+  const agentText = !agentKnown
+    ? "Agent: no host"
+    : presence.online === null
+      ? "Agent: checking…"
+      : agentOnline
+        ? "Agent: online"
+        : "Agent: offline";
+  const tunnelText = tunnelLive ? "Tunnel: connected" : "Tunnel: offline";
+
   return (
     <EntityCard
       icon={<TunnelIcon />}
-      name={tunnel.name}
+      name={
+        <>
+          {tunnel.name} <span className="badge">/{tunnel.slug}</span>
+        </>
+      }
+      sub={tunnel.target}
       label={statusBadge}
       notes={
         <span>
-          <code className="code">
-            <a href={publicURL} target="_blank" rel="noreferrer">/{tunnel.slug}</a>
-            {` → ${tunnel.target}`}
-          </code>
-          <span className="muted">
-            {tunnel.tunnelType} · host {hostName(hosts, tunnel.hostId)} · {providerName(providers, tunnel.providerId)}
-          </span>
-          <span className="muted" style={{ display: "block", marginTop: 4 }}>
-            {agentKnown ? (
-              <>
-                Agent: {presence.online === null ? "checking…" : agentOnline ? "online" : "offline"}
-                {" · "}tunnel wss: {tunnelLive ? "connected" : "not connected"}
-                {" · "}registry: {published ? (targetDrifted ? "published (target differs — re-save)" : "published") : "not published"}
-              </>
-            ) : (
-              <>Pick a host so live status can be checked.</>
-            )}
+          <span className="presence-row">
+            <span className="presence">
+              <span className={`dot ${agentDot}`} aria-hidden="true" />
+              {agentText}
+            </span>
+            <span className="presence">
+              <span className={`dot ${tunnelDot}`} aria-hidden="true" />
+              {tunnelText}
+            </span>
           </span>
           <span className="muted" style={{ display: "block", marginTop: 4 }}>
             <code>{cliCmd}</code>
@@ -173,6 +176,11 @@ function TunnelCard({
           {tunnelLive && !published && (
             <span className="error" style={{ display: "block", marginTop: 4 }}>
               Tunnel wss is connected, but /{tunnel.slug} is not published for this host — re-save to publish.
+            </span>
+          )}
+          {tunnelLive && published && targetDrifted && (
+            <span className="error" style={{ display: "block", marginTop: 4 }}>
+              Published target differs — re-save to update /{tunnel.slug}.
             </span>
           )}
         </span>

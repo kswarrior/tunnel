@@ -3,8 +3,9 @@ import type { ReactNode } from "react";
 /**
  * Shared entity card layout used by all pages (Tunnels / Hosts / Providers):
  *
- *   Row 1: [ICON svg] NAME ................ LABEL (status tag, right)
- *   Row 2: NOTES .......................... ACTIONS (icon-only buttons, right)
+ *   Row 1: [ICON svg] NAME + SUB ................ LABEL (status tag, right)
+ *                └ SUB = small gray line below the name (e.g. target url)
+ *   Row 2: NOTES ................................ ACTIONS (icon-only buttons, right)
  */
 
 export interface EntityAction {
@@ -18,7 +19,9 @@ export interface EntityAction {
 
 interface EntityCardProps {
   icon: ReactNode;
-  name: string;
+  name: ReactNode;
+  /** Small gray line rendered below the name (e.g. target url). */
+  sub?: ReactNode;
   /** Right-side status tag (e.g. Connected / Running / Active). */
   label: ReactNode;
   /** Bottom-left muted line (target, kind, tunnel link, ...). */
@@ -27,14 +30,17 @@ interface EntityCardProps {
   actions: EntityAction[];
 }
 
-export function EntityCard({ icon, name, label, notes, actions }: EntityCardProps) {
+export function EntityCard({ icon, name, sub, label, notes, actions }: EntityCardProps) {
   return (
     <article className="item-card">
       <div className="entity-top">
         <span className="entity-icon" aria-hidden="true">
           {icon}
         </span>
-        <strong className="entity-name">{name}</strong>
+        <strong className="entity-name">
+          <span className="entity-name-row">{name}</span>
+          {sub ? <span className="entity-sub">{sub}</span> : null}
+        </strong>
         <span className="entity-label">{label}</span>
       </div>
       <div className="entity-bottom">
