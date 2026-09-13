@@ -397,6 +397,8 @@ body {
 .modal {
   width: 100%;
   max-width: 440px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -436,8 +438,8 @@ select.input {
   appearance: auto;
 }
 
-.error {
-  color: var(--danger);
+.code a {
+  color: var(--primary-active);
 }
 
 .success {

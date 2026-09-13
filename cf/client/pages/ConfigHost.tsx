@@ -19,10 +19,13 @@ export function ConfigHostPage({ host, alreadySaved, onAllow, onDeny, onViewHost
 
   // Once the CLI's token is allowed we make sure it lands in Hosts
   // even if the Allow click raced with storage (App.handleAllowHost is idempotent).
+  // A ref tracks the latest callback so the effect never calls a stale closure.
+  const onAllowRef = useRef(onAllow);
+  onAllowRef.current = onAllow;
+  const allowed = decision === "allowed";
   useEffect(() => {
-    if (decision === "allowed") onAllow();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [decision === "allowed"]);
+    if (allowed) onAllowRef.current();
+  }, [allowed]);
 
   const dotClass =
     presence.online === true ? "dot dot-on" : presence.online === false ? "dot dot-off" : "dot dot-idle";
