@@ -14,11 +14,11 @@
   --text-dim: #475569;
   --text-faint: #94a3b8;
 
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --primary-active: #1e40af;
-  --primary-bg: #eff6ff;
-  --primary-ring: rgba(37, 99, 235, 0.3);
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+  --primary-active: #166534;
+  --primary-bg: #f0fdf4;
+  --primary-ring: rgba(22, 163, 74, 0.3);
 
   --danger: #dc2626;
   --radius: 12px;
