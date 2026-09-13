@@ -129,13 +129,6 @@ function TunnelCard({
     await copyText(cliCmd);
   };
 
-  const agentDot = !agentKnown || presence.online === null
-    ? "dot-idle"
-    : agentOnline
-      ? "dot-on"
-      : "dot-off";
-  const tunnelDot = tunnelLive ? "dot-on" : "dot-off";
-
   const agentText = !agentKnown
     ? "Agent: no host"
     : presence.online === null

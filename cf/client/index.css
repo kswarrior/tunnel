@@ -505,10 +505,26 @@ body {
   box-shadow: 0 0 0 3px var(--primary-ring);
 }
 
-.icon-only-btn.danger:hover {
+.icon-only-btn.danger,
+.icon-only-btn.negative {
+  color: var(--danger);
+}
+
+.icon-only-btn.danger:hover,
+.icon-only-btn.negative:hover {
   background: #fef2f2;
   border-color: #fecaca;
   color: var(--danger);
+}
+
+.icon-only-btn.positive {
+  color: var(--primary-active);
+}
+
+.icon-only-btn.positive:hover {
+  background: var(--primary-bg);
+  border-color: var(--primary);
+  color: var(--primary-active);
 }
 
 .badge {
@@ -528,6 +544,12 @@ body {
   background: var(--primary-bg);
   border-color: var(--primary);
   color: var(--primary-active);
+}
+
+.badge-off {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: var(--danger);
 }
 
 .modal-overlay {

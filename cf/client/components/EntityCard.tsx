@@ -15,6 +15,8 @@ export interface EntityAction {
   icon: ReactNode;
   onClick: () => void;
   danger?: boolean;
+  /** Green tone (e.g. Start / Enable). */
+  positive?: boolean;
 }
 
 interface EntityCardProps {
@@ -50,7 +52,7 @@ export function EntityCard({ icon, name, sub, label, notes, actions }: EntityCar
             <button
               key={a.key}
               type="button"
-              className={`icon-only-btn${a.danger ? " danger" : ""}`}
+              className={`icon-only-btn${a.danger ? " danger negative" : ""}${a.positive ? " positive" : ""}`}
               title={a.label}
               aria-label={a.label}
               onClick={a.onClick}
