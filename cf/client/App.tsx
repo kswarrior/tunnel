@@ -206,11 +206,12 @@ export default function App(): JSX.Element {
                     const found = tunnels.items.find((t) => t.id === id);
                     if (found) tunnels.update(id, { active: !found.active });
                   }}
+                  onUpdate={tunnels.update}
                   onRemove={tunnels.remove}
                 />
               )}
               {nav === "hosts" && (
-                <HostsPage hosts={hosts.items} onAdd={hosts.add} onRemove={hosts.remove} />
+                <HostsPage hosts={hosts.items} onAdd={hosts.add} onUpdate={hosts.update} onRemove={hosts.remove} />
               )}
               {nav === "providers" && (
                 <ProvidersPage
@@ -220,6 +221,7 @@ export default function App(): JSX.Element {
                     const found = providers.items.find((p) => p.id === id);
                     if (found) providers.update(id, { active: !found.active });
                   }}
+                  onUpdate={providers.update}
                   onRemove={providers.remove}
                 />
               )}

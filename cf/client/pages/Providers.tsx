@@ -1,5 +1,12 @@
 import { useState } from "react";
 import { Modal } from "../components/Modal";
+import {
+  CloudIcon,
+  EntityCard,
+  PencilIcon,
+  PowerIcon,
+  TrashIcon,
+} from "../components/EntityCard";
 import { newProvider } from "./store";
 import type { Provider } from "./types";
 
@@ -9,21 +16,54 @@ interface ProvidersPageProps {
   providers: Provider[];
   onAdd: (p: Provider) => void;
   onToggle: (id: string) => void;
+  onUpdate: (id: string, patch: Partial<Provider>) => void;
   onRemove: (id: string) => void;
 }
 
-export function ProvidersPage({ providers, onAdd, onToggle, onRemove }: ProvidersPageProps) {
+export function ProvidersPage({ providers, onAdd, onToggle, onUpdate, onRemove }: ProvidersPageProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<string>(KINDS[0]);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Provider | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<Provider | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editKind, setEditKind] = useState<string>(KINDS[0]);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const closeModal = () => {
     setModalOpen(false);
     setName("");
     setKind(KINDS[0]);
     setFormError(null);
+  };
+
+  const openEdit = (p: Provider) => {
+    setPendingEdit(p);
+    setEditName(p.name);
+    setEditKind(p.kind);
+    setEditError(null);
+  };
+
+  const closeEdit = () => {
+    setPendingEdit(null);
+    setEditName("");
+    setEditKind(KINDS[0]);
+    setEditError(null);
+  };
+
+  const handleEdit = () => {
+    if (!pendingEdit) return;
+    if (editName.trim().length < 2) {
+      setEditError("Name must be at least 2 characters.");
+      return;
+    }
+    if (providers.some((p) => p.id !== pendingEdit.id && p.name === editName.trim())) {
+      setEditError("A provider with this name already exists.");
+      return;
+    }
+    onUpdate(pendingEdit.id, { name: editName.trim(), kind: editKind });
+    closeEdit();
   };
 
   const handleAdd = () => {
@@ -58,23 +98,38 @@ export function ProvidersPage({ providers, onAdd, onToggle, onRemove }: Provider
       ) : (
         <div className="cards">
           {providers.map((p) => (
-            <article key={p.id} className="item-card">
-              <div className="item-top">
-                <strong>{p.name}</strong>
+            <EntityCard
+              key={p.id}
+              icon={<CloudIcon />}
+              name={p.name}
+              label={
                 <span className={`badge${p.active ? " badge-on" : ""}`}>
                   {p.active ? "Active" : "Off"}
                 </span>
-              </div>
-              <p className="muted">{p.kind}</p>
-              <div className="item-actions">
-                <button type="button" className="btn" onClick={() => onToggle(p.id)}>
-                  {p.active ? "Disable" : "Enable"}
-                </button>
-                <button type="button" className="btn" onClick={() => setPendingDelete(p)}>
-                  Delete
-                </button>
-              </div>
-            </article>
+              }
+              notes={p.kind}
+              actions={[
+                {
+                  key: "toggle",
+                  label: p.active ? "Disable" : "Enable",
+                  icon: <PowerIcon />,
+                  onClick: () => onToggle(p.id),
+                },
+                {
+                  key: "edit",
+                  label: "Edit",
+                  icon: <PencilIcon />,
+                  onClick: () => openEdit(p),
+                },
+                {
+                  key: "delete",
+                  label: "Delete",
+                  icon: <TrashIcon />,
+                  onClick: () => setPendingDelete(p),
+                  danger: true,
+                },
+              ]}
+            />
           ))}
         </div>
       )}
@@ -109,6 +164,41 @@ export function ProvidersPage({ providers, onAdd, onToggle, onRemove }: Provider
             Cancel
           </button>
           <button type="button" className="btn btn-primary" onClick={handleAdd}>
+            Save
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={pendingEdit !== null} title="Edit provider" onClose={closeEdit}>
+        <label className="label" htmlFor="provider-edit-name">Name</label>
+        <input
+          id="provider-edit-name"
+          className="input"
+          type="text"
+          autoComplete="off"
+          placeholder="My Workers account"
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+        />
+        <label className="label" htmlFor="provider-edit-kind">Type</label>
+        <select
+          id="provider-edit-kind"
+          className="input"
+          value={editKind}
+          onChange={(e) => setEditKind(e.target.value)}
+        >
+          {KINDS.map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
+        {editError && <p className="error">{editError}</p>}
+        <div className="row">
+          <button type="button" className="btn" onClick={closeEdit}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" onClick={handleEdit}>
             Save
           </button>
         </div>

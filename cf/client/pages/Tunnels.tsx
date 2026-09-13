@@ -37,6 +37,38 @@ export function TunnelsPage({ tunnels, onAdd, onToggle, onUpdate, onRemove }: Tu
     setFormError(null);
   };
 
+  const openEdit = (t: Tunnel) => {
+    setPendingEdit(t);
+    setEditName(t.name);
+    setEditTarget(t.target);
+    setEditError(null);
+  };
+
+  const closeEdit = () => {
+    setPendingEdit(null);
+    setEditName("");
+    setEditTarget("");
+    setEditError(null);
+  };
+
+  const handleEdit = () => {
+    if (!pendingEdit) return;
+    if (!isTunnelName(editName)) {
+      setEditError("Name must be 2-32 chars: a-z, 0-9, hyphen.");
+      return;
+    }
+    if (!isTarget(editTarget)) {
+      setEditError("Target must look like host:port, e.g. 127.0.0.1:3000.");
+      return;
+    }
+    if (tunnels.some((t) => t.id !== pendingEdit.id && t.name === editName.trim())) {
+      setEditError("A tunnel with this name already exists.");
+      return;
+    }
+    onUpdate(pendingEdit.id, { name: editName.trim(), target: editTarget.trim() });
+    closeEdit();
+  };
+
   const handleAdd = () => {
     if (!isTunnelName(name)) {
       setFormError("Name must be 2-32 chars: a-z, 0-9, hyphen.");
@@ -74,23 +106,38 @@ export function TunnelsPage({ tunnels, onAdd, onToggle, onUpdate, onRemove }: Tu
       ) : (
         <div className="cards">
           {tunnels.map((t) => (
-            <article key={t.id} className="item-card">
-              <div className="item-top">
-                <strong>{t.name}</strong>
+            <EntityCard
+              key={t.id}
+              icon={<TunnelIcon />}
+              name={t.name}
+              label={
                 <span className={`badge${t.active ? " badge-on" : ""}`}>
-                  {t.active ? "Active" : "Offline"}
+                  {t.active ? "Running" : "Stopped"}
                 </span>
-              </div>
-              <code className="code">{t.target}</code>
-              <div className="item-actions">
-                <button type="button" className="btn" onClick={() => onToggle(t.id)}>
-                  {t.active ? "Stop" : "Start"}
-                </button>
-                <button type="button" className="btn" onClick={() => setPendingDelete(t)}>
-                  Delete
-                </button>
-              </div>
-            </article>
+              }
+              notes={<code className="code">{t.target}</code>}
+              actions={[
+                {
+                  key: "toggle",
+                  label: t.active ? "Stop" : "Start",
+                  icon: t.active ? <StopIcon /> : <PlayIcon />,
+                  onClick: () => onToggle(t.id),
+                },
+                {
+                  key: "edit",
+                  label: "Edit",
+                  icon: <PencilIcon />,
+                  onClick: () => openEdit(t),
+                },
+                {
+                  key: "delete",
+                  label: "Delete",
+                  icon: <TrashIcon />,
+                  onClick: () => setPendingDelete(t),
+                  danger: true,
+                },
+              ]}
+            />
           ))}
         </div>
       )}
@@ -123,6 +170,39 @@ export function TunnelsPage({ tunnels, onAdd, onToggle, onUpdate, onRemove }: Tu
             Cancel
           </button>
           <button type="button" className="btn btn-primary" onClick={handleAdd}>
+            Save
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={pendingEdit !== null} title="Edit tunnel" onClose={closeEdit}>
+        <label className="label" htmlFor="tunnel-edit-name">Name</label>
+        <input
+          id="tunnel-edit-name"
+          className="input"
+          type="text"
+          autoComplete="off"
+          placeholder="exampletunnel"
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+        />
+        <label className="label" htmlFor="tunnel-edit-target">Target host:port</label>
+        <input
+          id="tunnel-edit-target"
+          className="input"
+          type="text"
+          autoComplete="off"
+          inputMode="numeric"
+          placeholder="127.0.0.1:3000"
+          value={editTarget}
+          onChange={(e) => setEditTarget(e.target.value)}
+        />
+        {editError && <p className="error">{editError}</p>}
+        <div className="row">
+          <button type="button" className="btn" onClick={closeEdit}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" onClick={handleEdit}>
             Save
           </button>
         </div>

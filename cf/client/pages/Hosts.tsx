@@ -1,5 +1,11 @@
 import { useState } from "react";
 import { Modal } from "../components/Modal";
+import {
+  EntityCard,
+  GlobeIcon,
+  PencilIcon,
+  TrashIcon,
+} from "../components/EntityCard";
 import { isHostname, newHost } from "./store";
 import { useHostPresence, CONFIG_HOST_RE } from "./presence";
 import type { Host } from "./types";
@@ -7,34 +13,69 @@ import type { Host } from "./types";
 interface HostsPageProps {
   hosts: Host[];
   onAdd: (h: Host) => void;
+  onUpdate: (id: string, patch: Partial<Host>) => void;
   onRemove: (id: string) => void;
 }
 
-function HostPresenceDot({ hostname }: { hostname: string }) {
-  // Only CLI-style ids have live WSS presence; plain hostnames stay unchecked.
-  // We still probe anything matching the id shape so `!config?host=` tokens
-  // saved via Allow immediately show green/red.
-  const probe = CONFIG_HOST_RE.test(hostname.trim()) ? hostname.trim() : null;
+function HostCard({
+  host,
+  onEdit,
+  onDelete,
+}: {
+  host: Host;
+  onEdit: (h: Host) => void;
+  onDelete: (h: Host) => void;
+}) {
+  // Only CLI-style ids have live WSS presence; plain hostnames stay "Saved".
+  // Token-like ids saved via Allow immediately show Connected/Offline.
+  const probe = CONFIG_HOST_RE.test(host.hostname.trim()) ? host.hostname.trim() : null;
   const presence = useHostPresence(probe);
-  if (!probe) return null;
-  const cls =
-    presence.online === true ? "dot dot-on" : presence.online === false ? "dot dot-off" : "dot dot-idle";
-  const label =
-    presence.online === true ? "WSS connected" : presence.online === false ? "WSS offline" : "Checking WSS…";
+
+  const label = !probe ? (
+    <span className="badge">Saved</span>
+  ) : presence.online === true ? (
+    <span className="badge badge-on">Connected</span>
+  ) : presence.online === false ? (
+    <span className="badge">Offline</span>
+  ) : (
+    <span className="badge">Checking…</span>
+  );
+
   return (
-    <span className="presence" title={label} aria-label={label}>
-      <span className={cls} aria-hidden="true" />
-      <span className="presence-label">{presence.online === true ? "Online" : presence.online === false ? "Offline" : "…"}</span>
-    </span>
+    <EntityCard
+      icon={<GlobeIcon />}
+      name={host.hostname}
+      label={label}
+      notes={host.tunnel ? `Tunnel: ${host.tunnel}` : "No tunnel linked"}
+      actions={[
+        {
+          key: "edit",
+          label: "Edit",
+          icon: <PencilIcon />,
+          onClick: () => onEdit(host),
+        },
+        {
+          key: "delete",
+          label: "Delete",
+          icon: <TrashIcon />,
+          onClick: () => onDelete(host),
+          danger: true,
+        },
+      ]}
+    />
   );
 }
 
-export function HostsPage({ hosts, onAdd, onRemove }: HostsPageProps) {
+export function HostsPage({ hosts, onAdd, onUpdate, onRemove }: HostsPageProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [hostname, setHostname] = useState("");
   const [tunnel, setTunnel] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Host | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<Host | null>(null);
+  const [editHostname, setEditHostname] = useState("");
+  const [editTunnel, setEditTunnel] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
 
   const closeModal = () => {
     setModalOpen(false);
@@ -56,6 +97,34 @@ export function HostsPage({ hosts, onAdd, onRemove }: HostsPageProps) {
     closeModal();
   };
 
+  const openEdit = (h: Host) => {
+    setPendingEdit(h);
+    setEditHostname(h.hostname);
+    setEditTunnel(h.tunnel);
+    setEditError(null);
+  };
+
+  const closeEdit = () => {
+    setPendingEdit(null);
+    setEditHostname("");
+    setEditTunnel("");
+    setEditError(null);
+  };
+
+  const handleEdit = () => {
+    if (!pendingEdit) return;
+    if (!isHostname(editHostname)) {
+      setEditError("Enter a valid hostname, e.g. app.example.com.");
+      return;
+    }
+    if (hosts.some((h) => h.id !== pendingEdit.id && h.hostname === editHostname.trim())) {
+      setEditError("This host is already added.");
+      return;
+    }
+    onUpdate(pendingEdit.id, { hostname: editHostname.trim(), tunnel: editTunnel.trim() });
+    closeEdit();
+  };
+
   return (
     <div className="container">
       <div className="page-head">
@@ -75,21 +144,7 @@ export function HostsPage({ hosts, onAdd, onRemove }: HostsPageProps) {
       ) : (
         <div className="cards">
           {hosts.map((h) => (
-            <article key={h.id} className="item-card">
-              <div className="item-top">
-                <strong className="host-name">{h.hostname}</strong>
-                <span className="host-badges">
-                  <HostPresenceDot hostname={h.hostname} />
-                  <span className="badge badge-on">Saved</span>
-                </span>
-              </div>
-              <p className="muted">{h.tunnel ? `Tunnel: ${h.tunnel}` : "No tunnel linked"}</p>
-              <div className="item-actions">
-                <button type="button" className="btn" onClick={() => setPendingDelete(h)}>
-                  Delete
-                </button>
-              </div>
-            </article>
+            <HostCard key={h.id} host={h} onEdit={openEdit} onDelete={setPendingDelete} />
           ))}
         </div>
       )}
@@ -121,6 +176,38 @@ export function HostsPage({ hosts, onAdd, onRemove }: HostsPageProps) {
             Cancel
           </button>
           <button type="button" className="btn btn-primary" onClick={handleAdd}>
+            Save
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={pendingEdit !== null} title="Edit host" onClose={closeEdit}>
+        <label className="label" htmlFor="host-edit-name">Hostname</label>
+        <input
+          id="host-edit-name"
+          className="input"
+          type="text"
+          autoComplete="off"
+          placeholder="app.example.com"
+          value={editHostname}
+          onChange={(e) => setEditHostname(e.target.value)}
+        />
+        <label className="label" htmlFor="host-edit-tunnel">Tunnel (optional)</label>
+        <input
+          id="host-edit-tunnel"
+          className="input"
+          type="text"
+          autoComplete="off"
+          placeholder="exampletunnel"
+          value={editTunnel}
+          onChange={(e) => setEditTunnel(e.target.value)}
+        />
+        {editError && <p className="error">{editError}</p>}
+        <div className="row">
+          <button type="button" className="btn" onClick={closeEdit}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" onClick={handleEdit}>
             Save
           </button>
         </div>
