@@ -28,6 +28,17 @@ export function isTunnelName(value: string): boolean {
   return /^[a-z0-9-]{2,32}$/.test(value.trim());
 }
 
+/** Slug like /hello — stored without the leading slash. */
+export function normalizeSlug(value: string): string {
+  return value.trim().replace(/^\/+/, "").toLowerCase();
+}
+
+export function isSlug(value: string): boolean {
+  return /^[a-z0-9-]{2,32}$/.test(normalizeSlug(value));
+}
+
+export const TUNNEL_TYPES = ["HTTP"] as const;
+
 export function isTarget(value: string): boolean {
   return /^[A-Za-z0-9_.-]+:\d{1,5}$/.test(value.trim());
 }
@@ -94,8 +105,24 @@ function useCollection<T extends { id: string }>(
   return { items, add, remove, update };
 }
 
-export function newTunnel(name: string, target: string): Tunnel {
-  return { id: makeId(), name: name.trim(), target: target.trim(), active: false, createdAt: Date.now() };
+export function newTunnel(
+  name: string,
+  target: string,
+  opts?: { slug?: string; tunnelType?: string; hostId?: string; providerId?: string },
+): Tunnel {
+  const cleanName = name.trim();
+  const slug = normalizeSlug(opts?.slug ?? cleanName);
+  return {
+    id: makeId(),
+    name: cleanName,
+    slug,
+    tunnelType: opts?.tunnelType ?? "HTTP",
+    target: target.trim(),
+    hostId: (opts?.hostId ?? "").trim(),
+    providerId: (opts?.providerId ?? "").trim(),
+    active: false,
+    createdAt: Date.now(),
+  };
 }
 
 export function newHost(hostname: string, tunnel: string): Host {

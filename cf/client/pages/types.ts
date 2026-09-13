@@ -9,7 +9,15 @@ export type WorkerStatus = {
 export type Tunnel = {
   id: string;
   name: string;
+  /** Public path slug without leading slash, e.g. "hello" for /hello. */
+  slug: string;
+  /** Tunnel type — only HTTP for now. */
+  tunnelType: string;
   target: string;
+  /** Selected host id (Hosts page) — CLI agent that serves this tunnel. */
+  hostId: string;
+  /** Selected provider id (Providers page). */
+  providerId: string;
   active: boolean;
   createdAt: number;
 };
