@@ -84,6 +84,37 @@ function stubFor(env: Env, host: string): DurableObjectStub {
   return env.HOST_PRESENCE.get(id);
 }
 
+function registryStub(env: Env): DurableObjectStub {
+  const id = env.TUNNEL_REGISTRY.idFromName("tunnels:registry");
+  return env.TUNNEL_REGISTRY.get(id);
+}
+
+export type TunnelEntry = {
+  slug: string;
+  host: string;
+  target: string;
+  name: string;
+  tunnelType: string;
+  updatedAt: string;
+};
+
+function uint8ToBase64(bytes: Uint8Array): string {
+  let s = "";
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    s += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(s);
+}
+
+function base64ToUint8(b64: string): Uint8Array {
+  if (!b64) return new Uint8Array(0);
+  const s = atob(b64);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+
 function requireHost(url: URL): string | null {
   const host = url.searchParams.get("host");
   return isValidHost(host) ? host : null;
@@ -91,14 +122,14 @@ function requireHost(url: URL): string | null {
 
 /** Extract `/api/hosts/<id>/...` host segment. */
 function hostFromPath(pathname: string): string | null {
-  const m = pathname.match(/^\/api\/hosts\/([^/]+)\/(status|ws|decision|allow|deny|decline|cancel)\/?$/);
+  const m = pathname.match(/^\/api\/hosts\/([^/]+)\/(status|ws|decision|allow|deny|decline|cancel|tunnels)\/?$/);
   if (!m) return null;
   return isValidHost(m[1]) ? m[1] : null;
 }
 
 /** Action suffix of `/api/hosts/<id>/<action>`. */
 function actionFromPath(pathname: string): string | null {
-  const m = pathname.match(/^\/api\/hosts\/[^/]+\/(status|ws|decision|allow|deny|decline|cancel)\/?$/);
+  const m = pathname.match(/^\/api\/hosts\/[^/]+\/(status|ws|decision|allow|deny|decline|cancel|tunnels)\/?$/);
   return m ? m[1] : null;
 }
 
@@ -115,6 +146,8 @@ type PresenceMessage = {
   agents: number;
   decision: ConfigDecision;
   timestamp: string;
+  /** Slugs with a live per-tunnel wss right now. */
+  tunnels: string[];
 };
 
 type DecisionMessage = {
