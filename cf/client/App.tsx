@@ -180,6 +180,7 @@ export default function App(): JSX.Element {
               host={configHost}
               alreadySaved={hosts.items.some((h) => h.hostname === configHost)}
               onAllow={handleAllowHost}
+              onDeny={handleDenyHost}
               onViewHosts={() => {
                 clearConfigHost();
                 setNav("hosts");

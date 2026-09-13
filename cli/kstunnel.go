@@ -8,6 +8,8 @@ import (
 	"crypto/sha1"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -89,6 +91,93 @@ func ConfigURL(workerBase, hostID string) string {
 		base = DefaultWorkerBase
 	}
 	return base + "/!config?host=" + url.QueryEscape(hostID)
+}
+
+// Config-decision handshake (mirrors cf/src/index.ts + presence.ts).
+//
+// The CLI prints /!config?host=<token> and holds the agent WSS open while the
+// decision is "pending" (missing/unknown counts as pending = OK, keep waiting).
+// The browser's Allow/Cancel page sends {"type":"decision","decision":...}
+// through the same Durable Object, which broadcasts it to every socket:
+//   - "allowed" -> CLI logs it and stays connected (alive).
+//   - "denied"  -> CLI stops (RunAgent returns ErrDenied).
+type Decision string
+
+const (
+	DecisionPending Decision = "pending"
+	DecisionAllowed Decision = "allowed"
+	DecisionDenied  Decision = "denied"
+)
+
+// ErrDenied is returned by RunAgent when the browser clicks Cancel/Decline.
+// main maps it to a friendly "Canceled — not saved" message and a non-zero exit.
+var ErrDenied = errors.New("host denied/canceled by browser")
+
+func normalizeDecision(s string) (Decision, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "allowed", "allow", "approve", "approved", "accept":
+		return DecisionAllowed, true
+	case "denied", "deny", "decline", "declined", "cancel", "canceled", "cancelled", "reject", "rejected":
+		return DecisionDenied, true
+	case "pending", "reset", "wait", "waiting":
+		return DecisionPending, true
+	}
+	return "", false
+}
+
+// ParseDecisionMessage extracts a config decision from an inbound WS text frame.
+// It understands {"type":"decision","decision":"allowed"|"denied"},
+// {"type":"allow"|"deny"|"cancel"|...}, {"type":"presence","decision":...},
+// and bare strings. Presence frames without a decision report ok=false.
+func ParseDecisionMessage(msg string) (Decision, bool) {
+	trimmed := strings.TrimSpace(msg)
+	if trimmed == "" {
+		return "", false
+	}
+	var v any
+	if err := json.Unmarshal([]byte(trimmed), &v); err != nil {
+		if d, ok := normalizeDecision(trimmed); ok {
+			return d, true
+		}
+		return "", false
+	}
+	switch t := v.(type) {
+	case string:
+		return normalizeDecision(t)
+	case map[string]any:
+		if typ, _ := t["type"].(string); typ != "" && typ != "decision" && typ != "presence" {
+			if d, ok := normalizeDecision(typ); ok && d != DecisionPending {
+				return d, true
+			}
+			if strings.EqualFold(strings.TrimSpace(typ), "reset") {
+				return DecisionPending, true
+			}
+		}
+		for _, key := range []string{"decision", "action", "approved"} {
+			if s, _ := t[key].(string); s != "" {
+				if d, ok := normalizeDecision(s); ok {
+					return d, true
+				}
+			}
+		}
+		if b, _ := t["allow"].(bool); b {
+			return DecisionAllowed, true
+		}
+		if b, _ := t["approved"].(bool); b {
+			return DecisionAllowed, true
+		}
+		for _, key := range []string{"deny", "decline", "cancel"} {
+			if b, _ := t[key].(bool); b {
+				return DecisionDenied, true
+			}
+		}
+		if typ, _ := t["type"].(string); typ == "presence" || typ == "decision" {
+			if s, _ := t["decision"].(string); s != "" {
+				return normalizeDecision(s)
+			}
+		}
+	}
+	return "", false
 }
 
 // AgentWSURL builds the WSS endpoint the CLI holds open for presence:
