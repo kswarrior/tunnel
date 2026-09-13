@@ -157,23 +157,24 @@ export const DEFAULT_PROVIDER_NAME = "KS Tunnel";
 export function useTunnels() {
   const col = useCollection<Tunnel>("ks-tunnels");
   // Heal legacy tunnels saved before slug/type/host/provider existed.
-  // Runs once per items change; writes back only when healing changed something.
   const healed = col.items.map(healTunnel);
   const needsHeal = healed.some((h, i) => {
     const o = col.items[i] as Partial<Tunnel>;
     return o.slug !== h.slug || o.tunnelType !== h.tunnelType || o.hostId !== h.hostId || o.providerId !== h.providerId;
   });
-  if (needsHeal) {
-    // Defer write to avoid setState-in-render loops; persist healed shape.
-    try {
-      localStorage.setItem("ks-tunnels", JSON.stringify(healed));
-    } catch {
-      // ignore
+  useEffect(() => {
+    if (needsHeal) {
+      try {
+        localStorage.setItem("ks-tunnels", JSON.stringify(healed));
+      } catch {
+        // ignore
+      }
     }
-    // Return healed view immediately so the form/dropdowns work.
-    return { ...col, items: healed };
-  }
-  return col;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsHeal]);
+  // Return healed view immediately so the form/dropdowns work even before
+  // the persisted heal lands.
+  return needsHeal ? { ...col, items: healed } : col;
 }
 
 export function useHosts() {
@@ -188,25 +189,22 @@ function sameHostname(a: Host, b: Host): boolean {
 export function useProviders() {
   const col = useCollection<Provider>("ks-providers");
   // Seed one provider already called "KS Tunnel" so the tunnel form
-  // always has a provider to pick.
+  // always has a provider to pick. Done via effect + add() so the id is
+  // stable and survives later adds (no render-time localStorage writes).
   const hasDefault = col.items.some(
     (p) => p.name.trim().toLowerCase() === DEFAULT_PROVIDER_NAME.toLowerCase(),
   );
-  if (!hasDefault && typeof window !== "undefined") {
-    try {
-      const seeded: Provider = {
+  useEffect(() => {
+    if (!hasDefault) {
+      col.add({
         id: makeId(),
         name: DEFAULT_PROVIDER_NAME,
         kind: "Cloudflare Workers",
         active: true,
         createdAt: Date.now(),
-      };
-      const next = [...col.items, seeded];
-      localStorage.setItem("ks-providers", JSON.stringify(next));
-      return { ...col, items: next };
-    } catch {
-      // storage unavailable — fall through with in-memory items
+      });
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasDefault]);
   return col;
 }
