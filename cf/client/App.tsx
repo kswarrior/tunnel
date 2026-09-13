@@ -6,7 +6,9 @@ import { TunnelsPage } from "./pages/Tunnels";
 import { HostsPage } from "./pages/Hosts";
 import { ProvidersPage } from "./pages/Providers";
 import { SettingsPage } from "./pages/Settings";
-import { useHosts, useProviders, useTunnels } from "./pages/store";
+import { ConfigHostPage } from "./pages/ConfigHost";
+import { getConfigHostFromLocation } from "./pages/presence";
+import { useHosts, useProviders, useTunnels, newHost } from "./pages/store";
 import type { WorkerStatus } from "./pages/types";
 
 type HelloResponse = {
@@ -82,8 +84,29 @@ export default function App(): JSX.Element {
   const tunnels = useTunnels();
   const hosts = useHosts();
   const providers = useProviders();
+  // `https://<worker>/!config?host=<random>` (also `/?host=` + hash fallback).
+  // When present we show the Allow screen instead of the normal page.
+  const [configHost, setConfigHost] = useState<string | null>(() => {
+    try {
+      return getConfigHostFromLocation();
+    } catch {
+      return null;
+    }
+  });
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      try {
+        setConfigHost(getConfigHostFromLocation());
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -106,6 +129,28 @@ export default function App(): JSX.Element {
     [closeSidebar],
   );
 
+  const clearConfigHost = useCallback(() => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("host");
+      // Drop hash-carried host too, keep plain navigation.
+      if (url.hash.includes("host=")) url.hash = "";
+      // If we are on /!config with no host left, go back to /.
+      if (url.pathname === "/!config" && !url.searchParams.get("host")) url.pathname = "/";
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      // ignore
+    }
+    setConfigHost(null);
+  }, []);
+
+  const handleAllowHost = useCallback(() => {
+    if (!configHost) return;
+    const exists = hosts.items.some((h) => h.hostname === configHost);
+    if (!exists) hosts.add(newHost(configHost, ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configHost, hosts.items]);
+
   const statusText = status.loading
     ? "Connecting…"
     : status.error
@@ -122,42 +167,56 @@ export default function App(): JSX.Element {
       <div className="body">
         <Sidebar active={nav} open={sidebarOpen} onNavigate={handleNavigate} />
         <main className="content" aria-hidden={sidebarOpen ? true : undefined}>
-          {nav === "home" && (
-            <HomePage
-              status={status}
-              tunnels={tunnels.items}
-              hosts={hosts.items}
-              providers={providers.items}
-              onRefresh={refresh}
-              onGo={(key) => setNav(key)}
-            />
-          )}
-          {nav === "tunnels" && (
-            <TunnelsPage
-              tunnels={tunnels.items}
-              onAdd={tunnels.add}
-              onToggle={(id) => {
-                const found = tunnels.items.find((t) => t.id === id);
-                if (found) tunnels.update(id, { active: !found.active });
+          {configHost ? (
+            <ConfigHostPage
+              host={configHost}
+              alreadySaved={hosts.items.some((h) => h.hostname === configHost)}
+              onAllow={handleAllowHost}
+              onViewHosts={() => {
+                clearConfigHost();
+                setNav("hosts");
               }}
-              onRemove={tunnels.remove}
             />
+          ) : (
+            <>
+              {nav === "home" && (
+                <HomePage
+                  status={status}
+                  tunnels={tunnels.items}
+                  hosts={hosts.items}
+                  providers={providers.items}
+                  onRefresh={refresh}
+                  onGo={(key) => setNav(key)}
+                />
+              )}
+              {nav === "tunnels" && (
+                <TunnelsPage
+                  tunnels={tunnels.items}
+                  onAdd={tunnels.add}
+                  onToggle={(id) => {
+                    const found = tunnels.items.find((t) => t.id === id);
+                    if (found) tunnels.update(id, { active: !found.active });
+                  }}
+                  onRemove={tunnels.remove}
+                />
+              )}
+              {nav === "hosts" && (
+                <HostsPage hosts={hosts.items} onAdd={hosts.add} onRemove={hosts.remove} />
+              )}
+              {nav === "providers" && (
+                <ProvidersPage
+                  providers={providers.items}
+                  onAdd={providers.add}
+                  onToggle={(id) => {
+                    const found = providers.items.find((p) => p.id === id);
+                    if (found) providers.update(id, { active: !found.active });
+                  }}
+                  onRemove={providers.remove}
+                />
+              )}
+              {nav === "settings" && <SettingsPage />}
+            </>
           )}
-          {nav === "hosts" && (
-            <HostsPage hosts={hosts.items} onAdd={hosts.add} onRemove={hosts.remove} />
-          )}
-          {nav === "providers" && (
-            <ProvidersPage
-              providers={providers.items}
-              onAdd={providers.add}
-              onToggle={(id) => {
-                const found = providers.items.find((p) => p.id === id);
-                if (found) providers.update(id, { active: !found.active });
-              }}
-              onRemove={providers.remove}
-            />
-          )}
-          {nav === "settings" && <SettingsPage />}
         </main>
       </div>
       <div

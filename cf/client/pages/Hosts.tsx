@@ -1,12 +1,32 @@
 import { useState } from "react";
 import { Modal } from "../components/Modal";
 import { isHostname, newHost } from "./store";
+import { useHostPresence, CONFIG_HOST_RE } from "./presence";
 import type { Host } from "./types";
 
 interface HostsPageProps {
   hosts: Host[];
   onAdd: (h: Host) => void;
   onRemove: (id: string) => void;
+}
+
+function HostPresenceDot({ hostname }: { hostname: string }) {
+  // Only CLI-style ids have live WSS presence; plain hostnames stay unchecked.
+  // We still probe anything matching the id shape so `!config?host=` tokens
+  // saved via Allow immediately show green/red.
+  const probe = CONFIG_HOST_RE.test(hostname.trim()) ? hostname.trim() : null;
+  const presence = useHostPresence(probe);
+  if (!probe) return null;
+  const cls =
+    presence.online === true ? "dot dot-on" : presence.online === false ? "dot dot-off" : "dot dot-idle";
+  const label =
+    presence.online === true ? "WSS connected" : presence.online === false ? "WSS offline" : "Checking WSS…";
+  return (
+    <span className="presence" title={label} aria-label={label}>
+      <span className={cls} aria-hidden="true" />
+      <span className="presence-label">{presence.online === true ? "Online" : presence.online === false ? "Offline" : "…"}</span>
+    </span>
+  );
 }
 
 export function HostsPage({ hosts, onAdd, onRemove }: HostsPageProps) {
@@ -57,8 +77,11 @@ export function HostsPage({ hosts, onAdd, onRemove }: HostsPageProps) {
           {hosts.map((h) => (
             <article key={h.id} className="item-card">
               <div className="item-top">
-                <strong>{h.hostname}</strong>
-                <span className="badge badge-on">Saved</span>
+                <strong className="host-name">{h.hostname}</strong>
+                <span className="host-badges">
+                  <HostPresenceDot hostname={h.hostname} />
+                  <span className="badge badge-on">Saved</span>
+                </span>
               </div>
               <p className="muted">{h.tunnel ? `Tunnel: ${h.tunnel}` : "No tunnel linked"}</p>
               <div className="item-actions">
