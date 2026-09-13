@@ -117,10 +117,77 @@ export function watcherWSURL(host: string): string {
   return `${proto}//${window.location.host}/api/hosts/${encodeURIComponent(host)}/ws`;
 }
 
+export function hostTunnelsURL(host: string): string {
+  return `/api/hosts/${encodeURIComponent(host)}/tunnels`;
+}
+
+export type RegistryEntry = {
+  slug: string;
+  host: string;
+  target: string;
+  name: string;
+  tunnelType: string;
+  updatedAt: string;
+};
+
+/** Worker-side slug registry (source of truth for what /<slug> resolves). */
+export async function fetchRegistry(): Promise<RegistryEntry[]> {
+  const res = await fetch("/api/tunnels", { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as { tunnels?: unknown };
+  if (!Array.isArray(data.tunnels)) return [];
+  return (data.tunnels as RegistryEntry[]).filter(
+    (t) => t && typeof t.slug === "string" && typeof t.host === "string",
+  );
+}
+
+export function useRegistry(pollMs = 10000): {
+  entries: RegistryEntry[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => void;
+} {
+  const [entries, setEntries] = useState<RegistryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchRegistry()
+      .then((list) => {
+        if (cancelled) return;
+        setEntries(list);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Registry unreachable");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tick]);
+
+  useEffect(() => {
+    if (pollMs <= 0) return;
+    const timer = window.setInterval(() => setTick((t) => t + 1), pollMs);
+    return () => window.clearInterval(timer);
+  }, [pollMs]);
+
+  return { entries, loading, error, refresh: () => setTick((t) => t + 1) };
+}
+
 export type PresenceState = {
   online: boolean | null;
   agents: number;
   decision: ConfigDecision;
+  /** Slugs with a live per-tunnel wss on this host right now. */
+  tunnels: string[];
 };
 
 /**
@@ -182,17 +249,14 @@ export async function sendDecision(host: string, decision: ConfigDecision): Prom
   const clean = host.trim();
   if (!isConfigHostId(clean)) return;
   const payload = JSON.stringify({ type: "decision", host: clean, decision });
-  // Fast relay first (CLI learns instantly), then durable POST.
-  await sendViaWatcherWS(clean, payload).catch(() => undefined);
-  try {
-    await fetch(decision === "allowed" ? allowURL(clean) : denyURL(clean), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: payload,
-    });
-  } catch {
-    // WS relay already attempted; offline POST just means the next poll/WS wins.
-  }
+  // Fast relay + durable POST in parallel: the CLI learns instantly and the
+  // decision persists even if the socket drops. Allow clicks feel instant.
+  const post = fetch(decision === "allowed" ? allowURL(clean) : denyURL(clean), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: payload,
+  }).catch(() => undefined);
+  await Promise.all([sendViaWatcherWS(clean, payload).catch(() => undefined), post]);
 }
 
 export function allowHost(host: string): Promise<void> {
@@ -210,11 +274,11 @@ export function denyHost(host: string): Promise<void> {
  * Missing/404 decision counts as "pending" (not decided yet = OK, keep waiting).
  */
 export function useHostPresence(host: string | null): PresenceState {
-  const [state, setState] = useState<PresenceState>({ online: null, agents: 0, decision: "pending" });
+  const [state, setState] = useState<PresenceState>({ online: null, agents: 0, decision: "pending", tunnels: [] });
 
   useEffect(() => {
     if (!host || !isConfigHostId(host)) {
-      setState({ online: null, agents: 0, decision: "pending" });
+      setState({ online: null, agents: 0, decision: "pending", tunnels: [] });
       return;
     }
     let cancelled = false;
@@ -233,13 +297,16 @@ export function useHostPresence(host: string | null): PresenceState {
       try {
         const res = await fetch(statusURL(host), { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as { online?: boolean; agents?: number; decision?: unknown };
+        const data = (await res.json()) as { online?: boolean; agents?: number; decision?: unknown; tunnels?: unknown };
         if (cancelled) return;
         const d = normalizeDecision(data.decision) ?? "pending";
+        const tunnels = Array.isArray(data.tunnels)
+          ? (data.tunnels.filter((t): t is string => typeof t === "string") as string[])
+          : undefined;
         if (typeof data.online === "boolean") {
-          setState((s) => ({ online: data.online as boolean, agents: data.agents ?? 0, decision: d }));
+          setState((s) => ({ online: data.online as boolean, agents: data.agents ?? 0, decision: d, tunnels: tunnels ?? s.tunnels }));
         } else {
-          setState((s) => ({ ...s, decision: d }));
+          setState((s) => ({ ...s, decision: d, tunnels: tunnels ?? s.tunnels }));
         }
       } catch {
         // keep last known state; WS may still deliver updates
@@ -264,6 +331,7 @@ export function useHostPresence(host: string | null): PresenceState {
             agents?: number;
             host?: string;
             decision?: unknown;
+            tunnels?: unknown;
           };
           if (data && data.type === "decision") {
             const d = normalizeDecision(data.decision) ?? parseDecisionMessage(raw);
@@ -274,10 +342,14 @@ export function useHostPresence(host: string | null): PresenceState {
           }
           if (data && data.type === "presence" && typeof data.online === "boolean") {
             const d = normalizeDecision(data.decision) ?? undefined;
+            const tunnels = Array.isArray(data.tunnels)
+              ? (data.tunnels.filter((t): t is string => typeof t === "string") as string[])
+              : undefined;
             setState((s) => ({
               online: data.online as boolean,
               agents: data.agents ?? 0,
               decision: d ?? s.decision,
+              tunnels: tunnels ?? s.tunnels,
             }));
             return;
           }

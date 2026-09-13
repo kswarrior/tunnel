@@ -210,15 +210,19 @@ function sameHostname(a: Host, b: Host): boolean {
 }
 
 export function useProviders() {
-  const col = useCollection<Provider>("ks-providers");
-  // Seed one provider already called "KS Tunnel" so the tunnel form
-  // always has a provider to pick. Done via effect + add() so the id is
-  // stable and survives later adds (no render-time localStorage writes).
-  const hasDefault = col.items.some(
-    (p) => p.name.trim().toLowerCase() === DEFAULT_PROVIDER_NAME.toLowerCase(),
-  );
+  const col = useCollection<Provider>("ks-providers", { isDuplicate: sameProviderName });
+  // Seed "KS Tunnel" exactly once: only when the key never existed.
+  // (If the user deletes it, it stays deleted — no resurrection loop.)
+  const [seeded, setSeeded] = useState(false);
   useEffect(() => {
-    if (!hasDefault) {
+    if (seeded) return;
+    let missingKey = false;
+    try {
+      missingKey = localStorage.getItem("ks-providers") === null;
+    } catch {
+      missingKey = col.items.length === 0;
+    }
+    if (missingKey && !col.items.some((p) => sameProviderName(p, { id: "", name: DEFAULT_PROVIDER_NAME } as Provider))) {
       col.add({
         id: makeId(),
         name: DEFAULT_PROVIDER_NAME,
@@ -227,7 +231,12 @@ export function useProviders() {
         createdAt: Date.now(),
       });
     }
+    setSeeded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasDefault]);
+  }, [seeded]);
   return col;
+}
+
+function sameProviderName(a: Provider, b: Provider): boolean {
+  return a.name.trim().toLowerCase() === b.name.trim().toLowerCase();
 }
