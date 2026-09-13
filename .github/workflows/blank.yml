@@ -1,3 +1,4 @@
+```yaml
 name: KS Tunnel Testing
 
 on:
@@ -39,13 +40,11 @@ jobs:
         run: |
           set -e
 
-          echo "===== Environment ====="
           node --version
           npm --version
           go version
           git --version
           gh --version
-          echo "======================="
 
       - name: Prepare Git
         run: |
@@ -61,11 +60,56 @@ jobs:
 
           echo "Git workspace ready."
 
-      - name: Build and start KS Tunnel
+      - name: Install OpenCode
         run: |
           set -e
-          echo "===== KS Tunnel ====="
-          echo "KS Tunnel is running."
+
+          npm install --global opencode-ai
+
+          echo "===== OpenCode ====="
+          opencode --version
+          echo "===================="
+
+      - name: Start OpenCode Web UI
+        run: |
+          set -e
+
+          rm -f /tmp/opencode.log
+          rm -f /tmp/opencode.pid
+
+          nohup opencode web \
+            --port 7070 \
+            --hostname 0.0.0.0 \
+            > /tmp/opencode.log 2>&1 &
+
+          OPENCODE_PID=$!
+
+          echo "$OPENCODE_PID" > /tmp/opencode.pid
+
+          READY=0
+
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:7070/ >/dev/null 2>&1; then
+              READY=1
+              break
+            fi
+
+            if ! kill -0 "$OPENCODE_PID" 2>/dev/null; then
+              echo "OpenCode stopped unexpectedly."
+              cat /tmp/opencode.log
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          if [ "$READY" -ne 1 ]; then
+            echo "OpenCode Web UI did not become ready."
+            cat /tmp/opencode.log
+            exit 1
+          fi
+
+          echo "OpenCode Web UI is running on port 7070."
 
       - name: Install Cloudflare Tunnel
         run: |
@@ -99,7 +143,7 @@ jobs:
 
           echo "Cloudflare Tunnel is running."
 
-      - name: Monitor KS Tunnel repository
+      - name: Monitor repository
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -115,6 +159,7 @@ jobs:
             local assets=("$@")
 
             if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+
               if [ "${#assets[@]}" -gt 0 ]; then
                 gh release create \
                   "$RELEASE_TAG" \
@@ -164,7 +209,6 @@ jobs:
                 --diff-filter=ACMRT \
                 -- \
                 'release/kstunnel/**' \
-                'release/kstunnel/**' \
                 'library/**' \
                 2>/dev/null
             )
@@ -193,11 +237,12 @@ jobs:
 
           push_with_retry() {
             for ATTEMPT in 1 2 3 4 5 6 7 8 9 10; do
+
               if git push origin main:main >/dev/null 2>&1; then
                 return 0
               fi
 
-              echo "Push attempt $ATTEMPT failed."
+              echo "Push attempt $ATTEMPT failed. Synchronizing with origin/main..."
 
               git fetch origin main >/dev/null 2>&1 || true
 
@@ -212,19 +257,11 @@ jobs:
           }
 
           while true; do
+
             CURRENT_TIME=$(date +%s)
 
             if [ "$CURRENT_TIME" -ge "$END_TIME" ]; then
               break
-            fi
-
-            if [ -f /tmp/ks-tunnel.pid ]; then
-              if ! kill -0 "$(cat /tmp/ks-tunnel.pid)" 2>/dev/null; then
-                echo "KS Tunnel process stopped."
-                echo "===== KS Tunnel Log ====="
-                cat /tmp/ks-tunnel.log 2>/dev/null || true
-                exit 1
-              fi
             fi
 
             git fetch origin main >/dev/null 2>&1 || true
@@ -248,6 +285,7 @@ jobs:
             REMOTE_COMMIT=$(git rev-parse origin/main 2>/dev/null || echo "")
 
             if [ -n "$LOCAL_COMMIT" ] && [ -n "$REMOTE_COMMIT" ]; then
+
               if [ "$LOCAL_COMMIT" = "$REMOTE_COMMIT" ]; then
                 :
 
@@ -264,6 +302,7 @@ jobs:
                   push_with_retry || true
                 fi
               fi
+
             fi
 
             sleep 25
@@ -326,6 +365,7 @@ jobs:
               fi
 
               for ATTEMPT in 1 2 3 4 5 6 7 8 9 10; do
+
                 if git push origin main:main >/dev/null 2>&1; then
                   break
                 fi
@@ -340,6 +380,7 @@ jobs:
               done
 
               if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+
                 if [ "${#RELEASE_ASSETS[@]}" -gt 0 ]; then
                   gh release create \
                     "$RELEASE_TAG" \
@@ -356,7 +397,9 @@ jobs:
                     --generate-notes \
                     >/dev/null 2>&1 || true
                 fi
+
               else
+
                 if [ "${#RELEASE_ASSETS[@]}" -gt 0 ]; then
                   gh release upload \
                     "$RELEASE_TAG" \
@@ -370,26 +413,29 @@ jobs:
                   --title "$RELEASE_TITLE" \
                   --target "$(git rev-parse HEAD)" \
                   >/dev/null 2>&1 || true
+
               fi
             fi
 
           elif ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+
             gh release create \
               "$RELEASE_TAG" \
               --target "$(git rev-parse HEAD)" \
               --title "$RELEASE_TITLE" \
               --generate-notes \
               >/dev/null 2>&1 || true
+
           fi
 
-      - name: Stop KS Tunnel
+      - name: Stop OpenCode
         if: always()
         run: |
-          if [ -f /tmp/ks-tunnel.pid ]; then
-            kill "$(cat /tmp/ks-tunnel.pid)" 2>/dev/null || true
+          if [ -f /tmp/opencode.pid ]; then
+            kill "$(cat /tmp/opencode.pid)" 2>/dev/null || true
           fi
 
-          pkill -f "/tmp/ks-tunnel" 2>/dev/null || true
+          pkill -f "opencode web" 2>/dev/null || true
 
       - name: Stop Cloudflare Tunnel
         if: always()
@@ -403,8 +449,9 @@ jobs:
       - name: Show service logs on failure
         if: failure()
         run: |
-          echo "===== KS Tunnel Log ====="
-          cat /tmp/ks-tunnel.log 2>/dev/null || true
+          echo "===== OpenCode Log ====="
+          cat /tmp/opencode.log 2>/dev/null || true
 
           echo "===== Cloudflare Log ====="
           cat /tmp/cloudflared.log 2>/dev/null || true
+```
