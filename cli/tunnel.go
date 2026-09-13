@@ -6,10 +6,11 @@
 //                (data: ONE socket PER TUNNEL. Run one CLI process per tunnel,
 //                each holding its own tunnel wss plus the shared main wss.)
 //
-// Visitor flow: GET https://<worker>/<slug>/... -> Worker resolves slug ->
-// HostPresence DO -> tunnel-request over tunnel wss -> CLI fetches
+// Visitor flow: GET https://<worker>/!tunnel=<slug>/... -> Worker resolves
+// slug -> HostPresence DO -> tunnel-request over tunnel wss -> CLI fetches
 // http://<target><path> locally -> tunnel-response -> Worker returns the
 // bytes verbatim (fullscreen, no KS wrapper — only the wss of that port).
+// Legacy /<slug> URLs proxy the same way.
 package kstunnel
 
 import (
@@ -338,7 +339,7 @@ func respondTunnel(mu *sync.Mutex, send func(string) error, id string, status in
 //
 //	kstunnel --host <id> --tunnel hello --target 127.0.0.1:4757
 //
-// Visitors then get fullscreen upstream bytes at https://<worker>/hello.
+// Visitors then get fullscreen upstream bytes at https://<worker>/!tunnel=hello.
 func RunTunnel(ctx context.Context, workerBase, hostID, slug, target string, logf func(string, ...any)) error {
 	if logf == nil {
 		logf = func(string, ...any) {}
@@ -350,7 +351,7 @@ func RunTunnel(ctx context.Context, workerBase, hostID, slug, target string, log
 		return fmt.Errorf("invalid host id %q", hostID)
 	}
 	if !IsValidSlug(slug) {
-		return fmt.Errorf("invalid tunnel slug %q (want 2-32 chars: a-z, 0-9, hyphen, like /hello)", slug)
+		return fmt.Errorf("invalid tunnel slug %q (want slug like hello for /!tunnel=hello)", slug)
 	}
 	if !IsValidTarget(target) {
 		return fmt.Errorf("invalid target %q (want like 127.0.0.1:4757)", target)
@@ -359,7 +360,7 @@ func RunTunnel(ctx context.Context, workerBase, hostID, slug, target string, log
 	if err != nil {
 		return err
 	}
-	// Best-effort registry publish so /<slug> resolves immediately.
+	// Best-effort registry publish so /!tunnel=<slug> resolves immediately.
 	go RegisterTunnel(workerBase, hostID, slug, target, slug, logf)
 
 	backoff := time.Second

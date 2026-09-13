@@ -28,7 +28,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "                   WSS and auto-serve every tunnel users create for this\n")
 	fmt.Fprintf(os.Stderr, "                   host — the worker pushes tunnel-spec over the main wss,\n")
 	fmt.Fprintf(os.Stderr, "                   no per-tunnel command needed.\n")
-	fmt.Fprintf(os.Stderr, "  --tunnel SLUG    Public path slug like hello for /hello (2-32 chars:\n")
+	fmt.Fprintf(os.Stderr, "  --tunnel SLUG    Public path slug like hello for /!tunnel=hello (2-32 chars:\n")
 	fmt.Fprintf(os.Stderr, "                   a-z, 0-9, hyphen). Creates ONE per-tunnel WSS for data.\n")
 	fmt.Fprintf(os.Stderr, "                   Run one process per tunnel (each = one wss).\n")
 	fmt.Fprintf(os.Stderr, "                   Aliases: --slug\n")
@@ -41,9 +41,9 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "  # 1) register this machine (main wss = cf <-> cli control):\n")
 	fmt.Fprintf(os.Stderr, "  %s --config:host\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "\n")
-	fmt.Fprintf(os.Stderr, "  # 2) serve local :4757 at https://<worker>/hello (main wss + tunnel wss):\n")
+	fmt.Fprintf(os.Stderr, "  # 2) serve local :4757 at https://<worker>/!tunnel=hello (main wss + tunnel wss):\n")
 	fmt.Fprintf(os.Stderr, "  %s --host <id-from-step-1> --tunnel hello --target 127.0.0.1:4757\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  # visit /hello -> fullscreen 127.0.0.1:4757 via wss (cli -> workers -> you)\n")
+	fmt.Fprintf(os.Stderr, "  # visit /!tunnel=hello -> fullscreen 127.0.0.1:4757 via wss (cli -> workers -> you)\n")
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "  # 3) host mode: auto-serve every tunnel users create for <id>:\n")
 	fmt.Fprintf(os.Stderr, "  %s --host <id-from-step-1>\n", os.Args[0])
@@ -201,7 +201,7 @@ func main() {
 		tunnelSlug = cli.NormalizeSlug(tunnelSlug)
 		tunnelTarget = cli.NormalizeTarget(tunnelTarget)
 		if !cli.IsValidSlug(tunnelSlug) {
-			fmt.Fprintf(os.Stderr, "error: invalid --tunnel %q (want 2-32 chars: a-z, 0-9, hyphen, like /hello)\n", tunnelSlug)
+			fmt.Fprintf(os.Stderr, "error: invalid --tunnel %q (want slug like hello for /!tunnel=hello)\n", tunnelSlug)
 			os.Exit(2)
 		}
 		if !cli.IsValidTarget(tunnelTarget) {
@@ -245,8 +245,8 @@ func main() {
 			tunnelName = tunnelSlug
 		}
 		fmt.Printf("Host: %s\n", hostID)
-		fmt.Printf("Tunnel: /%s -> %s\n", tunnelSlug, tunnelTarget)
-		fmt.Printf("Public: %s/%s (fullscreen, via wss cli -> workers -> you)\n", strings.TrimRight(workerBase, "/"), tunnelSlug)
+		fmt.Printf("Tunnel: /!tunnel=%s -> %s\n", tunnelSlug, tunnelTarget)
+		fmt.Printf("Public: %s/!tunnel=%s (fullscreen, via wss cli -> workers -> you)\n", strings.TrimRight(workerBase, "/"), tunnelSlug)
 		wsURL, _ := cli.TunnelWSURLWithTarget(workerBase, hostID, tunnelSlug, tunnelTarget)
 		mainURL, _ := cli.AgentWSURL(workerBase, hostID)
 		fmt.Fprintf(os.Stderr, "main wss (control)  : %s\n", mainURL)
