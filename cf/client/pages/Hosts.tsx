@@ -8,6 +8,7 @@ import {
   TrashIcon,
 } from "../components/EntityCard";
 import { isHostname, newHost } from "./store";
+import { CheckingPills, Skeleton } from "../components/Skeleton";
 import { useHostPresence, CONFIG_HOST_RE, isConfigHostId } from "./presence";
 import type { Host, Tunnel } from "./types";
 
@@ -84,8 +85,14 @@ function HostCard({
     await copyText(probe ? hostCmd : token);
   };
 
+  // Presence starts unknown — shimmer instead of flashing "0/N live" in red
+  // that flips a moment later. Plain hostnames never check ("Saved").
+  const checking = probe !== null && presence.online === null;
+
   const label = !probe ? (
     <span className="badge">Saved</span>
+  ) : checking ? (
+    <Skeleton width={84} height={22} pill label="Checking host status…" />
   ) : presence.online === true ? (
     <span className="badge badge-on">Connected</span>
   ) : presence.online === false ? (
@@ -106,16 +113,20 @@ function HostCard({
       label={label}
       notes={
         <span>
-          <span className="presence-row">
-            <span className="presence">
-              <span className={`dot ${agentDot}`} aria-hidden="true" />
-              {agentText}
+          {checking ? (
+            <CheckingPills />
+          ) : (
+            <span className="presence-row">
+              <span className="presence">
+                <span className={`dot ${agentDot}`} aria-hidden="true" />
+                {agentText}
+              </span>
+              <span className="presence">
+                <span className={`dot ${tunnelsDot}`} aria-hidden="true" />
+                {tunnelsText}
+              </span>
             </span>
-            <span className="presence">
-              <span className={`dot ${tunnelsDot}`} aria-hidden="true" />
-              {tunnelsText}
-            </span>
-          </span>
+          )}
         </span>
       }
       actions={[

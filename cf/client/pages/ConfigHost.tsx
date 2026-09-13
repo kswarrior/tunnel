@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Skeleton } from "../components/Skeleton";
 import { allowHost, configURL, denyHost, useHostPresence } from "./presence";
 
 interface ConfigHostPageProps {
@@ -95,9 +96,15 @@ export function ConfigHostPage({ host, alreadySaved, onAllow, onDeny, onViewHost
           <code className="code config-code">{host}</code>
         </div>
         <p className={`config-status${presence.online === true ? " success" : presence.online === false ? " error" : " muted"}`}>
-          {statusLabel}
-          {presence.online === false && decision === "pending" && (
-            <span className="muted"> — keep your CLI running: it holds the WSS connection open.</span>
+          {presence.online === null ? (
+            <Skeleton width={110} height={14} pill label="Checking agent status…" />
+          ) : (
+            <>
+              {statusLabel}
+              {presence.online === false && decision === "pending" && (
+                <span className="muted"> — keep your CLI running: it holds the WSS connection open.</span>
+              )}
+            </>
           )}
         </p>
 

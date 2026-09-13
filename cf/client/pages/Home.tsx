@@ -49,10 +49,13 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
         </button>
       </div>
 
-      <section className="card">
+      <section className="card" aria-busy={status.loading}>
         <h2>Worker</h2>
         {status.loading ? (
-          <div className="skeleton" style={{ height: 16 }} />
+          <>
+            <div className="skeleton" style={{ height: 16, width: "70%" }} />
+            <div className="skeleton" style={{ height: 12, width: "45%", marginTop: 8 }} />
+          </>
         ) : status.message ? (
           <p className="muted">
             {status.message} · Health: {status.healthy ? "OK" : "FAIL"}
