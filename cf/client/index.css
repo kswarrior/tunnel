@@ -270,13 +270,6 @@ body {
   border-color: var(--border-strong);
 }
 
-.item-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 /* ---------- Shared entity card (all pages) ----------
    Row 1: ICON + NAME ........ LABEL (status tag, right)
    Row 2: NOTES .............. ACTIONS (icon-only buttons, right) */
@@ -388,17 +381,6 @@ body {
   background: var(--primary-bg);
   border-color: var(--primary);
   color: var(--primary-active);
-}
-
-.item-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.item-actions .btn {
-  flex: 1;
-  min-height: 40px;
 }
 
 .modal-overlay {
@@ -698,26 +680,6 @@ select.input {
   100% {
     box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
   }
-}
-
-.presence {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.host-name {
-  overflow-wrap: anywhere;
-}
-
-.host-badges {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .config-card {
