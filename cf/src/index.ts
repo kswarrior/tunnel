@@ -214,6 +214,9 @@ export class HostPresence implements DurableObject {
   private ctx: DurableObjectState;
   private host: string = "unknown";
   private decision: ConfigDecision = "pending";
+  // Pending visitor -> CLI tunnel requests, keyed by request id.
+  // In-memory only: eviction drops them and visitors get a 504.
+  private pending = new Map<string, { resolve: (data: unknown) => void; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(ctx: DurableObjectState) {
     this.ctx = ctx;
@@ -243,6 +246,27 @@ export class HostPresence implements DurableObject {
     return "unknown";
   }
 
+  /** Slugs with at least one live per-tunnel wss right now. */
+  private tunnelSlugs(): string[] {
+    const out = new Set<string>();
+    try {
+      for (const ws of this.ctx.getWebSockets()) {
+        let tags: string[] = [];
+        try {
+          tags = this.ctx.getTags(ws);
+        } catch {
+          continue;
+        }
+        for (const t of tags) {
+          if (t.startsWith("tunnel:")) out.add(t.slice("tunnel:".length));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return [...out].sort();
+  }
+
   private snapshot(host: string): PresenceMessage {
     let agents = 0;
     try {
@@ -257,6 +281,7 @@ export class HostPresence implements DurableObject {
       agents,
       decision: this.decision,
       timestamp: new Date().toISOString(),
+      tunnels: this.tunnelSlugs(),
     };
   }
 
@@ -355,10 +380,104 @@ export class HostPresence implements DurableObject {
         }
         return json(this.decisionMessage(host));
       }
+
+      // --- Tunnel data-plane (internal, called by the Worker entrypoint) ----
+      // POST /tunnel/request?slug=hello {id,method,path,headers,bodyBase64}
+      // Forwards one visitor HTTP request over the per-tunnel wss to the CLI
+      // and waits (max 30s) for {"type":"tunnel-response",...}.
+      if (path === "/tunnel/request" || path.endsWith("/tunnel/request")) {
+        if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
+        const slug = normalizeSlug(url.searchParams.get("slug"));
+        if (!isValidSlug(slug)) return json({ error: "invalid slug" }, 400);
+        let payload: Record<string, unknown>;
+        try {
+          payload = (await request.json()) as Record<string, unknown>;
+        } catch {
+          return json({ error: "invalid json" }, 400);
+        }
+        const id = typeof payload["id"] === "string" ? (payload["id"] as string) : "";
+        if (!id) return json({ error: "missing id" }, 400);
+        let sockets: WebSocket[] = [];
+        try {
+          sockets = this.ctx.getWebSockets(`tunnel:${slug}`);
+        } catch {
+          sockets = [];
+        }
+        if (sockets.length === 0) {
+          return json(
+            {
+              error: "tunnel offline",
+              slug,
+              host,
+              hint: `run: kstunnel --host ${host} --tunnel ${slug} --target 127.0.0.1:PORT`,
+            },
+            502,
+          );
+        }
+        const ws = sockets[0];
+        const msg = JSON.stringify({
+          type: "tunnel-request",
+          id,
+          method: typeof payload["method"] === "string" ? payload["method"] : "GET",
+          path: typeof payload["path"] === "string" ? payload["path"] : "/",
+          headers: (payload["headers"] as Record<string, string>) ?? {},
+          bodyBase64: typeof payload["bodyBase64"] === "string" ? payload["bodyBase64"] : "",
+          slug,
+        });
+        const data = await new Promise<unknown>((resolve) => {
+          const timer = setTimeout(() => {
+            this.pending.delete(id);
+            resolve({ error: "tunnel timeout", slug });
+          }, 30000);
+          this.pending.set(id, {
+            resolve: (d) => {
+              clearTimeout(timer);
+              resolve(d);
+            },
+            timer,
+          });
+          try {
+            ws.send(msg);
+          } catch {
+            clearTimeout(timer);
+            this.pending.delete(id);
+            resolve({ error: "tunnel send failed", slug });
+          }
+        });
+        const err = (data as Record<string, unknown>)?.["error"];
+        if (typeof err === "string" && (data as Record<string, unknown>)?.["status"] === undefined) {
+          const code = err === "tunnel timeout" ? 504 : 502;
+          return json(data, code);
+        }
+        return json(data);
+      }
+
+      // GET /tunnels -> { host, tunnels:[slug...], online, agents, ... }
+      if (path === "/tunnels" || path.endsWith("/tunnels")) {
+        return json({ host, tunnels: this.tunnelSlugs(), ...this.snapshot(host) });
+      }
     }
 
     // --- WebSocket attach -------------------------------------------------
     if (upgrade && upgrade.toLowerCase() === "websocket") {
+      // Per-tunnel data socket: /tunnel/ws?host=ID&slug=hello
+      // One wss per tunnel (data plane). Main wss (/api/agent/ws) stays control.
+      if (url.pathname === "/tunnel/ws" || url.pathname.endsWith("/tunnel/ws")) {
+        const slug = normalizeSlug(url.searchParams.get("slug"));
+        if (host === "unknown") return json({ error: "missing or invalid ?host=" }, 400);
+        if (!isValidSlug(slug)) return json({ error: "missing or invalid ?slug= (want 2-32 a-z0-9-)" }, 400);
+        const pair = new WebSocketPair();
+        const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+        this.ctx.acceptWebSocket(server, [`tunnel:${slug}`]);
+        try {
+          server.send(JSON.stringify({ type: "tunnel-ready", slug, host, timestamp: new Date().toISOString() }));
+        } catch {
+          // ignore send race
+        }
+        this.broadcast(host);
+        return new Response(null, { status: 101, webSocket: client });
+      }
+
       const roleParam = url.searchParams.get("role");
       const pathIsAgent = url.pathname === "/api/agent/ws" || url.pathname === "/api/ws";
       const role = roleParam === "agent" || roleParam === "watch"
@@ -423,6 +542,35 @@ export class HostPresence implements DurableObject {
       }
       return;
     }
+    // Tunnel data-plane: CLI answers visitor requests here.
+    // {"type":"tunnel-response","id":"...","status":200,"headers":{},"bodyBase64":"..."}
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      if (obj && obj["type"] === "tunnel-response" && typeof obj["id"] === "string") {
+        const waiter = this.pending.get(obj["id"] as string);
+        if (waiter) {
+          this.pending.delete(obj["id"] as string);
+          clearTimeout(waiter.timer);
+          waiter.resolve({
+            status: typeof obj["status"] === "number" ? obj["status"] : 200,
+            headers: (obj["headers"] as Record<string, string>) ?? {},
+            bodyBase64: typeof obj["bodyBase64"] === "string" ? obj["bodyBase64"] : "",
+          });
+        }
+        return;
+      }
+      // CLI may also (re)register its tunnel over the main wss; ack it.
+      if (obj && obj["type"] === "register-tunnel") {
+        try {
+          ws.send(JSON.stringify({ type: "registered", timestamp: new Date().toISOString() }));
+        } catch {
+          // ignore
+        }
+        return;
+      }
+    } catch {
+      // not JSON — fall through to decision parsing
+    }
     // Browser Allow/Cancel arrives here as a watcher WS message, e.g.
     // {"type":"decision","decision":"allowed"} or {"type":"deny"}.
     // Persist it and relay to every socket (CLI agent + other watchers).
@@ -457,13 +605,113 @@ export class HostPresence implements DurableObject {
     _wasClean: boolean,
   ): Promise<void> {
     void ws;
-    // An agent may have gone away — recount and notify remaining watchers.
+    // An agent or tunnel socket may have gone away — recount and notify watchers.
     this.broadcast(this.host);
   }
 
   async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
     void ws;
     this.broadcast(this.host);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Durable Object: global tunnel registry (slug -> host/target).
+// Singleton via idFromName("tunnels:registry") so visitor requests
+// (which have no localStorage) can resolve /<slug> to the owning host.
+// ---------------------------------------------------------------------------
+
+export class TunnelRegistry implements DurableObject {
+  private ctx: DurableObjectState;
+
+  constructor(ctx: DurableObjectState) {
+    this.ctx = ctx;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // GET /list -> { tunnels: TunnelEntry[] }
+    if ((path === "/list" || path.endsWith("/list")) && request.method === "GET") {
+      try {
+        const map = await this.ctx.storage.list<TunnelEntry>({ prefix: "tunnel:" });
+        return json({ tunnels: [...map.values()].sort((a, b) => a.slug.localeCompare(b.slug)) });
+      } catch {
+        return json({ tunnels: [] });
+      }
+    }
+
+    // GET /resolve?slug=hello -> TunnelEntry | 404
+    if (path === "/resolve" || path.endsWith("/resolve")) {
+      const slug = normalizeSlug(url.searchParams.get("slug"));
+      if (!isValidSlug(slug)) return json({ error: "invalid slug" }, 400);
+      try {
+        const entry = await this.ctx.storage.get<TunnelEntry>(`tunnel:${slug}`);
+        if (!entry) return json({ error: "not found", slug }, 404);
+        return json(entry);
+      } catch {
+        return json({ error: "storage error" }, 500);
+      }
+    }
+
+    // POST /register {slug,host,target,name,tunnelType} -> upsert
+    if (path === "/register" || path.endsWith("/register") || (path === "/" && request.method === "POST")) {
+      let body: Record<string, unknown>;
+      try {
+        body = (await request.json()) as Record<string, unknown>;
+      } catch {
+        return json({ error: "invalid json" }, 400);
+      }
+      const slug = normalizeSlug(typeof body["slug"] === "string" ? (body["slug"] as string) : "");
+      if (!isValidSlug(slug)) {
+        return json({ error: "invalid slug (want 2-32 chars: a-z, 0-9, hyphen, like /hello)" }, 400);
+      }
+      const host = typeof body["host"] === "string" ? (body["host"] as string).trim() : "";
+      if (host && !HOST_RE.test(host)) return json({ error: "invalid host" }, 400);
+      const target = typeof body["target"] === "string" ? (body["target"] as string).trim() : "";
+      if (!target) return json({ error: "missing target (want like 127.0.0.1:4757)" }, 400);
+      const entry: TunnelEntry = {
+        slug,
+        host,
+        target,
+        name: typeof body["name"] === "string" && (body["name"] as string).trim()
+          ? (body["name"] as string).trim()
+          : slug,
+        tunnelType: typeof body["tunnelType"] === "string" && (body["tunnelType"] as string).trim()
+          ? (body["tunnelType"] as string).trim()
+          : "HTTP",
+        updatedAt: new Date().toISOString(),
+      };
+      try {
+        await this.ctx.storage.put(`tunnel:${slug}`, entry);
+      } catch {
+        return json({ error: "storage error" }, 500);
+      }
+      return json(entry);
+    }
+
+    // POST /unregister {slug} | DELETE /unregister?slug=.. | DELETE /?slug=..
+    if (path === "/unregister" || path.endsWith("/unregister")) {
+      let slug = normalizeSlug(url.searchParams.get("slug"));
+      if (request.method === "POST") {
+        try {
+          const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+          if (typeof body["slug"] === "string") slug = normalizeSlug(body["slug"] as string);
+        } catch {
+          // keep query slug
+        }
+      }
+      if (!isValidSlug(slug)) return json({ error: "invalid slug" }, 400);
+      try {
+        await this.ctx.storage.delete(`tunnel:${slug}`);
+      } catch {
+        // ignore
+      }
+      return json({ ok: true, slug });
+    }
+
+    return json({ error: "not found" }, 404);
   }
 }
 
@@ -562,6 +810,98 @@ export default {
         });
       }
       return json({ error: "not found" }, 404);
+    }
+
+    // --- Per-tunnel wss (data plane): one socket per tunnel ------------------
+    // WS wss://<worker>/api/tunnels/ws?host=ID&slug=hello[&target=127.0.0.1:4757]
+    // CLI opens one per tunnel it serves. Main wss (/api/agent/ws) stays
+    // control (cf <-> cli talk: presence/decisions/pings).
+    if (url.pathname === "/api/tunnels/ws") {
+      const host = requireHost(url);
+      const slug = normalizeSlug(url.searchParams.get("slug"));
+      if (!host) return json({ error: "missing or invalid ?host=" }, 400);
+      if (!isValidSlug(slug)) return json({ error: "missing or invalid ?slug= (want like /hello)" }, 400);
+      if (!env.HOST_PRESENCE) return json({ error: "presence not configured" }, 500);
+      const upgrade = request.headers.get("Upgrade") || request.headers.get("upgrade");
+      if (!upgrade || upgrade.toLowerCase() !== "websocket") {
+        return json({ error: "expected websocket upgrade" }, 426);
+      }
+      // Make sure visitors can resolve /<slug> even if the browser form
+      // never POSTed: upsert the mapping from the CLI's own query params.
+      if (env.TUNNEL_REGISTRY) {
+        try {
+          const target = (url.searchParams.get("target") || "").trim();
+          const reg = registryStub(env);
+          await reg.fetch(
+            new Request("https://registry/register", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                slug,
+                host,
+                target: target || "127.0.0.1:0",
+                name: slug,
+                tunnelType: "HTTP",
+              }),
+            }),
+          );
+        } catch {
+          // registry touch is best-effort; the socket itself still works
+        }
+      }
+      const stub = stubFor(env, host);
+      const fwd = new Request(
+        `https://presence/tunnel/ws?host=${encodeURIComponent(host)}&slug=${encodeURIComponent(slug)}`,
+        request,
+      );
+      return stub.fetch(fwd);
+    }
+
+    // --- Tunnel registry (so visitors without localStorage can resolve /slug)
+    // GET /api/tunnels -> { tunnels:[...] }
+    // POST /api/tunnels {slug,host,target,name,tunnelType} -> upsert
+    if (url.pathname === "/api/tunnels") {
+      if (!env.TUNNEL_REGISTRY) return json({ error: "registry not configured" }, 500);
+      const reg = registryStub(env);
+      if (request.method === "GET") {
+        return reg.fetch(new Request("https://registry/list", request));
+      }
+      if (request.method === "POST" || request.method === "PUT" || request.method === "PATCH") {
+        let body = "";
+        try {
+          body = await request.text();
+        } catch {
+          body = "";
+        }
+        return reg.fetch(
+          new Request("https://registry/register", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body,
+          }),
+        );
+      }
+      return json({ error: "method not allowed" }, 405);
+    }
+
+    // GET /api/tunnels/:slug -> resolve | DELETE /api/tunnels/:slug -> remove
+    {
+      const m = url.pathname.match(/^\/api\/tunnels\/([A-Za-z0-9-]+)\/?$/);
+      if (m) {
+        if (!env.TUNNEL_REGISTRY) return json({ error: "registry not configured" }, 500);
+        const reg = registryStub(env);
+        const slug = normalizeSlug(m[1]);
+        if (!isValidSlug(slug)) return json({ error: "invalid slug" }, 400);
+        if (request.method === "GET") {
+          return reg.fetch(`https://registry/resolve?slug=${encodeURIComponent(slug)}`);
+        }
+        if (request.method === "DELETE") {
+          return reg.fetch(`https://registry/unregister?slug=${encodeURIComponent(slug)}`, {
+            method: "DELETE",
+          });
+        }
+        return json({ error: "method not allowed" }, 405);
+      }
     }
 
     // --- Generic alias -------------------------------------------------------
