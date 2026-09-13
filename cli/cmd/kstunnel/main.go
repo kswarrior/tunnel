@@ -103,7 +103,7 @@ func main() {
 	}
 
 	if workerBase == "" {
-		workerBase = cli.DefaultWorkerBase
+		workerBase = kstunnel.DefaultWorkerBase
 	}
 	allowURL := kstunnel.ConfigURL(workerBase, hostID)
 
