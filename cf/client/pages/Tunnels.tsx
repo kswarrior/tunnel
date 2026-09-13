@@ -393,14 +393,14 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
   };
 
   // Enabling is local-only — it never starts serving by itself. Re-publish on
-  // enable so a previously failed publish (worker offline, host picked later)
-  // heals: /!tunnel=<slug> then gives a clear offline page instead of an error.
+  // enable so a previously failed publish heals; disabling unpublishes so a
+  // host-mode CLI (`kstunnel --host <id>`) closes the tunnel socket by itself.
   const handleToggle = (t: Tunnel) => {
     const turningOn = !t.active;
     onToggle(t.id);
     if (!turningOn) {
       void unpublishTunnel(t.slug).then(() => {
-        setPageNotice(`Stopped — /${t.slug} unpublished. A host-mode CLI closes it automatically.`);
+        setPageNotice(`Stopped — /!tunnel=${t.slug} unpublished. A host-mode CLI closes it automatically.`);
         registry.refresh();
       });
       return;
@@ -408,11 +408,11 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     const updated = { ...t, active: true };
     publishTunnel(updated, hosts)
       .then(() => {
-        setPageNotice(`Enabled and published — /${t.slug} resolves. Keep the CLI running: kstunnel --host <id> --tunnel ${t.slug} --target ${t.target}.`);
+        setPageNotice(`Enabled and published — /!tunnel=${t.slug} resolves. Keep the CLI running: kstunnel --host <id> --tunnel ${t.slug} --target ${t.target}.`);
         registry.refresh();
       })
       .catch((e: unknown) => {
-        setPageNotice(`Enabled locally, but publishing failed (${e instanceof Error ? e.message : "worker unreachable"}) — /${t.slug} won't resolve until you re-save with the worker online.`);
+        setPageNotice(`Enabled locally, but publishing failed (${e instanceof Error ? e.message : "worker unreachable"}) — /!tunnel=${t.slug} won't resolve until you re-save with the worker online.`);
       });
   };
 
@@ -451,7 +451,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
                 />
               </div>
               <div>
-                <label className="label" htmlFor="tunnel-slug">Slug (like /hello)</label>
+                <label className="label" htmlFor="tunnel-slug">Slug (public at /!tunnel=…)</label>
                 <input
                   id="tunnel-slug"
                   className="input"
@@ -570,7 +570,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
       {tunnels.length === 0 ? (
         <section className="card">
           <p className="muted">Nothing here. Add your first tunnel to get started.</p>
-          <code className="code">visit /hello to see 127.0.0.1:4757 via wss (cli → workers → you, fullscreen)</code>
+          <code className="code">visit /!tunnel=hello to see 127.0.0.1:4757 via wss (cli → workers → you, fullscreen)</code>
         </section>
       ) : (
         <div className="cards">
@@ -589,119 +589,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
           ))}
         </div>
       )}
-
-      <Modal open={modalOpen} title="Add tunnel" onClose={closeModal} wide>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleAdd();
-          }}
-        >
-          <div className="form-grid">
-            <div>
-              <label className="label" htmlFor="tunnel-name">Name</label>
-              <input
-                id="tunnel-name"
-                className="input"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="hello"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label" htmlFor="tunnel-slug">Slug (like /hello)</label>
-              <input
-                id="tunnel-slug"
-                className="input"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="/hello"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label" htmlFor="tunnel-type">Type (HTTP only yet)</label>
-              <select
-                id="tunnel-type"
-                className="input"
-                value={tunnelType}
-                onChange={(e) => setTunnelType(e.target.value)}
-              >
-                {TUNNEL_TYPES.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label" htmlFor="tunnel-target">URL (like 127.0.0.1:4757)</label>
-              <input
-                id="tunnel-target"
-                className="input"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                inputMode="url"
-                placeholder="127.0.0.1:4757"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="label" htmlFor="tunnel-host">Host (selection drop down)</label>
-              <select
-                id="tunnel-host"
-                className="input"
-                value={hostId}
-                onChange={(e) => setHostId(e.target.value)}
-              >
-                <option value="">{hosts.length === 0 ? "No hosts yet — allow one first" : "Select host…"}</option>
-                {hosts.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.hostname}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label" htmlFor="tunnel-provider">Providers Drop down</label>
-              <select
-                id="tunnel-provider"
-                className="input"
-                value={providerId}
-                onChange={(e) => setProviderId(e.target.value)}
-              >
-                <option value="">{providers.length === 0 ? "No providers yet" : "Select provider…"}</option>
-                {providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {formError && <p className="error">{formError}</p>}
-          <p className="muted" style={{ fontSize: 12 }}>
-            Visiting <code>/{normalizeSlug(slug || name) || "hello"}</code> shows <code>{target || "127.0.0.1:4757"}</code> of
-            that host — proxied fullscreen via wss (cli → workers → you). One wss per tunnel + one main wss
-            (cf ↔ cli) for control.
-          </p>
-          <div className="row">
-            <button type="button" className="btn" onClick={closeModal}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary">
-              Save
-            </button>
-          </div>
-        </form>
-      </Modal>
 
       <Modal open={pendingEdit !== null} title="Edit tunnel" onClose={closeEdit} wide>
         <form
@@ -725,14 +612,14 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
               />
             </div>
             <div>
-              <label className="label" htmlFor="tunnel-edit-slug">Slug (like /hello)</label>
+              <label className="label" htmlFor="tunnel-edit-slug">Slug (public at /!tunnel=…)</label>
               <input
                 id="tunnel-edit-slug"
                 className="input"
                 type="text"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="/hello"
+                placeholder="hello"
                 value={editSlug}
                 onChange={(e) => setEditSlug(e.target.value)}
               />
@@ -813,7 +700,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
 
       <Modal open={pendingDelete !== null} title="Delete tunnel" onClose={() => setPendingDelete(null)}>
         <p>
-          Delete <strong>{pendingDelete?.name}</strong> (<code>/{pendingDelete?.slug}</code>)? Visitors will stop
+          Delete <strong>{pendingDelete?.name}</strong> (<code>/!tunnel={pendingDelete?.slug}</code>)? Visitors will stop
           resolving it. This cannot be undone.
         </p>
         <div className="row">
@@ -827,7 +714,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
               if (pendingDelete) {
                 void unpublishTunnel(pendingDelete.slug);
                 onRemove(pendingDelete.id);
-                setPageNotice(`Deleted /${pendingDelete.slug}.`);
+                setPageNotice(`Deleted /!tunnel=${pendingDelete.slug}.`);
               }
               setPendingDelete(null);
             }}

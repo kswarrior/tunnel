@@ -73,7 +73,7 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
           <h2>Quick start</h2>
           <p className="muted" style={{ margin: "0 0 8px" }}>
             1. Run <code>kstunnel --config:host</code> on the machine to expose and Allow it (Hosts).
-            2. Add a tunnel (Tunnels) pointing at that host — e.g. <code>/hello → 127.0.0.1:4757</code>.
+            2. Add a tunnel (Tunnels) pointing at that host — e.g. <code>/!tunnel=hello → 127.0.0.1:4757</code>.
             3. Run the shown <code>kstunnel --host … --tunnel … --target …</code> command and open the public URL.
           </p>
           <div className="row" style={{ justifyContent: "flex-start" }}>

@@ -28,7 +28,7 @@ export function isTunnelName(value: string): boolean {
   return /^[a-z0-9-]{2,32}$/.test(value.trim());
 }
 
-/** Slug like /hello — stored without the leading slash. */
+/** Slug like hello (public at /!tunnel=hello) — stored without any prefix. */
 export function normalizeSlug(value: string): string {
   return value.trim().replace(/^\/+/, "").toLowerCase();
 }
