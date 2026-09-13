@@ -265,7 +265,6 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     setEditHostId(t.hostId);
     setEditProviderId(t.providerId);
     setEditError(null);
-    setEditNotice(null);
   };
 
   const closeEdit = () => {

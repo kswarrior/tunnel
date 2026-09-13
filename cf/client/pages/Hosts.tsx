@@ -1,35 +1,52 @@
 import { useState } from "react";
 import { Modal } from "../components/Modal";
 import {
+  CopyIcon,
   EntityCard,
   GlobeIcon,
   PencilIcon,
   TrashIcon,
 } from "../components/EntityCard";
 import { isHostname, newHost } from "./store";
-import { useHostPresence, CONFIG_HOST_RE } from "./presence";
-import type { Host } from "./types";
+import { useHostPresence, CONFIG_HOST_RE, isConfigHostId } from "./presence";
+import type { Host, Tunnel } from "./types";
 
 interface HostsPageProps {
   hosts: Host[];
+  tunnels: Tunnel[];
   onAdd: (h: Host) => void;
   onUpdate: (id: string, patch: Partial<Host>) => void;
   onRemove: (id: string) => void;
 }
 
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function HostCard({
   host,
+  tunnels,
   onEdit,
   onDelete,
 }: {
   host: Host;
+  tunnels: Tunnel[];
   onEdit: (h: Host) => void;
   onDelete: (h: Host) => void;
 }) {
   // Only CLI-style ids have live WSS presence; plain hostnames stay "Saved".
-  // Token-like ids saved via Allow immediately show Connected/Offline.
-  const probe = CONFIG_HOST_RE.test(host.hostname.trim()) ? host.hostname.trim() : null;
+  // Token-like ids saved via Allow immediately show Connected/Offline + tunnels.
+  const token = host.hostname.trim();
+  const probe = CONFIG_HOST_RE.test(token) ? token : null;
   const presence = useHostPresence(probe);
+  const [copied, setCopied] = useState(false);
+
+  const linked = tunnels.filter((t) => t.hostId === host.id);
 
   const label = !probe ? (
     <span className="badge">Saved</span>
@@ -41,13 +58,49 @@ function HostCard({
     <span className="badge">Checking…</span>
   );
 
+  const handleCopy = async () => {
+    if (await copyText(token)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
   return (
     <EntityCard
       icon={<GlobeIcon />}
       name={host.hostname}
       label={label}
-      notes={host.tunnel ? `Tunnel: ${host.tunnel}` : "No tunnel linked"}
+      notes={
+        <span>
+          <span className="muted">
+            {linked.length === 0
+              ? "No tunnels linked"
+              : `Tunnels: ${linked.map((t) => `/${t.slug}`).join(", ")}`}
+          </span>
+          {probe && presence.tunnels.length > 0 && (
+            <span className="muted" style={{ display: "block" }}>
+              Live wss: {presence.tunnels.map((s) => `/${s}`).join(", ")}
+            </span>
+          )}
+          {probe && (
+            <span className="muted" style={{ display: "block", marginTop: 4 }}>
+              <code>kstunnel --host {token} --tunnel &lt;slug&gt; --target 127.0.0.1:PORT</code>
+              {copied && " — id copied!"}
+            </span>
+          )}
+        </span>
+      }
       actions={[
+        ...(probe
+          ? [
+              {
+                key: "copy",
+                label: "Copy host id",
+                icon: <CopyIcon />,
+                onClick: () => void handleCopy(),
+              } as const,
+            ]
+          : []),
         {
           key: "edit",
           label: "Edit",
@@ -66,7 +119,7 @@ function HostCard({
   );
 }
 
-export function HostsPage({ hosts, onAdd, onUpdate, onRemove }: HostsPageProps) {
+export function HostsPage({ hosts, tunnels, onAdd, onUpdate, onRemove }: HostsPageProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [hostname, setHostname] = useState("");
   const [tunnel, setTunnel] = useState("");
@@ -85,15 +138,16 @@ export function HostsPage({ hosts, onAdd, onUpdate, onRemove }: HostsPageProps) 
   };
 
   const handleAdd = () => {
-    if (!isHostname(hostname)) {
-      setFormError("Enter a valid hostname, e.g. app.example.com.");
+    const clean = hostname.trim();
+    if (!isHostname(clean)) {
+      setFormError("Enter a valid hostname or CLI host id (e.g. app.example.com or abcde).");
       return;
     }
-    if (hosts.some((h) => h.hostname === hostname.trim())) {
+    if (hosts.some((h) => h.hostname.trim().toLowerCase() === clean.toLowerCase())) {
       setFormError("This host is already added.");
       return;
     }
-    onAdd(newHost(hostname, tunnel));
+    onAdd(newHost(clean, tunnel));
     closeModal();
   };
 
@@ -113,17 +167,20 @@ export function HostsPage({ hosts, onAdd, onUpdate, onRemove }: HostsPageProps) 
 
   const handleEdit = () => {
     if (!pendingEdit) return;
-    if (!isHostname(editHostname)) {
-      setEditError("Enter a valid hostname, e.g. app.example.com.");
+    const clean = editHostname.trim();
+    if (!isHostname(clean)) {
+      setEditError("Enter a valid hostname or CLI host id (e.g. app.example.com or abcde).");
       return;
     }
-    if (hosts.some((h) => h.id !== pendingEdit.id && h.hostname === editHostname.trim())) {
+    if (hosts.some((h) => h.id !== pendingEdit.id && h.hostname.trim().toLowerCase() === clean.toLowerCase())) {
       setEditError("This host is already added.");
       return;
     }
-    onUpdate(pendingEdit.id, { hostname: editHostname.trim(), tunnel: editTunnel.trim() });
+    onUpdate(pendingEdit.id, { hostname: clean, tunnel: editTunnel.trim() });
     closeEdit();
   };
+
+  const pendingLinked = pendingDelete ? tunnels.filter((t) => t.hostId === pendingDelete.id) : [];
 
   return (
     <div className="container">
@@ -139,84 +196,115 @@ export function HostsPage({ hosts, onAdd, onUpdate, onRemove }: HostsPageProps) 
 
       {hosts.length === 0 ? (
         <section className="card">
-          <p className="muted">Nothing here. Add the first hostname to route through a tunnel.</p>
+          <p className="muted">
+            Nothing here. Run <code>kstunnel --config:host</code> on the machine you want to expose, open the
+            printed Allow link, and it lands here automatically.
+          </p>
         </section>
       ) : (
         <div className="cards">
           {hosts.map((h) => (
-            <HostCard key={h.id} host={h} onEdit={openEdit} onDelete={setPendingDelete} />
+            <HostCard key={h.id} host={h} tunnels={tunnels} onEdit={openEdit} onDelete={setPendingDelete} />
           ))}
         </div>
       )}
 
       <Modal open={modalOpen} title="Add host" onClose={closeModal}>
-        <label className="label" htmlFor="host-name">Hostname</label>
-        <input
-          id="host-name"
-          className="input"
-          type="text"
-          autoComplete="off"
-          placeholder="app.example.com"
-          value={hostname}
-          onChange={(e) => setHostname(e.target.value)}
-        />
-        <label className="label" htmlFor="host-tunnel">Tunnel (optional)</label>
-        <input
-          id="host-tunnel"
-          className="input"
-          type="text"
-          autoComplete="off"
-          placeholder="exampletunnel"
-          value={tunnel}
-          onChange={(e) => setTunnel(e.target.value)}
-        />
-        {formError && <p className="error">{formError}</p>}
-        <div className="row">
-          <button type="button" className="btn" onClick={closeModal}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-primary" onClick={handleAdd}>
-            Save
-          </button>
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleAdd();
+          }}
+        >
+          <label className="label" htmlFor="host-name">Hostname or CLI host id</label>
+          <input
+            id="host-name"
+            className="input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="app.example.com or abcde"
+            value={hostname}
+            onChange={(e) => setHostname(e.target.value)}
+          />
+          <p className="muted" style={{ fontSize: 12 }}>
+            Tip: CLI machines register via the Allow link — you rarely need to type the id by hand.
+            {isConfigHostId(hostname.trim()) && " Looks like a CLI host id — live status will appear."}
+          </p>
+          <label className="label" htmlFor="host-tunnel">Tunnel (optional)</label>
+          <input
+            id="host-tunnel"
+            className="input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="exampletunnel"
+            value={tunnel}
+            onChange={(e) => setTunnel(e.target.value)}
+          />
+          {formError && <p className="error">{formError}</p>}
+          <div className="row">
+            <button type="button" className="btn" onClick={closeModal}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Save
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={pendingEdit !== null} title="Edit host" onClose={closeEdit}>
-        <label className="label" htmlFor="host-edit-name">Hostname</label>
-        <input
-          id="host-edit-name"
-          className="input"
-          type="text"
-          autoComplete="off"
-          placeholder="app.example.com"
-          value={editHostname}
-          onChange={(e) => setEditHostname(e.target.value)}
-        />
-        <label className="label" htmlFor="host-edit-tunnel">Tunnel (optional)</label>
-        <input
-          id="host-edit-tunnel"
-          className="input"
-          type="text"
-          autoComplete="off"
-          placeholder="exampletunnel"
-          value={editTunnel}
-          onChange={(e) => setEditTunnel(e.target.value)}
-        />
-        {editError && <p className="error">{editError}</p>}
-        <div className="row">
-          <button type="button" className="btn" onClick={closeEdit}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-primary" onClick={handleEdit}>
-            Save
-          </button>
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleEdit();
+          }}
+        >
+          <label className="label" htmlFor="host-edit-name">Hostname or CLI host id</label>
+          <input
+            id="host-edit-name"
+            className="input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="app.example.com or abcde"
+            value={editHostname}
+            onChange={(e) => setEditHostname(e.target.value)}
+          />
+          <label className="label" htmlFor="host-edit-tunnel">Tunnel (optional)</label>
+          <input
+            id="host-edit-tunnel"
+            className="input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="exampletunnel"
+            value={editTunnel}
+            onChange={(e) => setEditTunnel(e.target.value)}
+          />
+          {editError && <p className="error">{editError}</p>}
+          <div className="row">
+            <button type="button" className="btn" onClick={closeEdit}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Save
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={pendingDelete !== null} title="Delete host" onClose={() => setPendingDelete(null)}>
         <p>
           Delete <strong>{pendingDelete?.hostname}</strong>? This cannot be undone.
         </p>
+        {pendingLinked.length > 0 && (
+          <p className="error">
+            {pendingLinked.length} tunnel(s) use this host ({pendingLinked.map((t) => `/${t.slug}`).join(", ")}).
+            Deleting unlinks them — their public URLs will go offline until you pick a new host.
+          </p>
+        )}
         <div className="row">
           <button type="button" className="btn" onClick={() => setPendingDelete(null)}>
             Cancel

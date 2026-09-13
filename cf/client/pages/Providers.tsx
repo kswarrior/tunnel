@@ -7,20 +7,25 @@ import {
   PowerIcon,
   TrashIcon,
 } from "../components/EntityCard";
-import { newProvider } from "./store";
-import type { Provider } from "./types";
+import { DEFAULT_PROVIDER_NAME, newProvider } from "./store";
+import type { Provider, Tunnel } from "./types";
 
 const KINDS = ["Cloudflare Workers", "Custom", "Local"] as const;
 
 interface ProvidersPageProps {
   providers: Provider[];
+  tunnels: Tunnel[];
   onAdd: (p: Provider) => void;
   onToggle: (id: string) => void;
   onUpdate: (id: string, patch: Partial<Provider>) => void;
   onRemove: (id: string) => void;
 }
 
-export function ProvidersPage({ providers, onAdd, onToggle, onUpdate, onRemove }: ProvidersPageProps) {
+function isDefaultProvider(p: Provider): boolean {
+  return p.name.trim().toLowerCase() === DEFAULT_PROVIDER_NAME.toLowerCase();
+}
+
+export function ProvidersPage({ providers, tunnels, onAdd, onToggle, onUpdate, onRemove }: ProvidersPageProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<string>(KINDS[0]);
@@ -58,7 +63,7 @@ export function ProvidersPage({ providers, onAdd, onToggle, onUpdate, onRemove }
       setEditError("Name must be at least 2 characters.");
       return;
     }
-    if (providers.some((p) => p.id !== pendingEdit.id && p.name === editName.trim())) {
+    if (providers.some((p) => p.id !== pendingEdit.id && p.name.trim().toLowerCase() === editName.trim().toLowerCase())) {
       setEditError("A provider with this name already exists.");
       return;
     }
@@ -71,13 +76,15 @@ export function ProvidersPage({ providers, onAdd, onToggle, onUpdate, onRemove }
       setFormError("Name must be at least 2 characters.");
       return;
     }
-    if (providers.some((p) => p.name === name.trim())) {
+    if (providers.some((p) => p.name.trim().toLowerCase() === name.trim().toLowerCase())) {
       setFormError("A provider with this name already exists.");
       return;
     }
     onAdd(newProvider(name, kind));
     closeModal();
   };
+
+  const pendingInUse = pendingDelete ? tunnels.filter((t) => t.providerId === pendingDelete.id) : [];
 
   return (
     <div className="container">
@@ -103,8 +110,11 @@ export function ProvidersPage({ providers, onAdd, onToggle, onUpdate, onRemove }
               icon={<CloudIcon />}
               name={p.name}
               label={
-                <span className={`badge${p.active ? " badge-on" : ""}`}>
-                  {p.active ? "Active" : "Off"}
+                <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                  {isDefaultProvider(p) && <span className="badge">Default</span>}
+                  <span className={`badge${p.active ? " badge-on" : ""}`}>
+                    {p.active ? "Active" : "Off"}
+                  </span>
                 </span>
               }
               notes={p.kind}
@@ -135,79 +145,106 @@ export function ProvidersPage({ providers, onAdd, onToggle, onUpdate, onRemove }
       )}
 
       <Modal open={modalOpen} title="Add provider" onClose={closeModal}>
-        <label className="label" htmlFor="provider-name">Name</label>
-        <input
-          id="provider-name"
-          className="input"
-          type="text"
-          autoComplete="off"
-          placeholder="My Workers account"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <label className="label" htmlFor="provider-kind">Type</label>
-        <select
-          id="provider-kind"
-          className="input"
-          value={kind}
-          onChange={(e) => setKind(e.target.value)}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleAdd();
+          }}
         >
-          {KINDS.map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
-        {formError && <p className="error">{formError}</p>}
-        <div className="row">
-          <button type="button" className="btn" onClick={closeModal}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-primary" onClick={handleAdd}>
-            Save
-          </button>
-        </div>
+          <label className="label" htmlFor="provider-name">Name</label>
+          <input
+            id="provider-name"
+            className="input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="My Workers account"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <label className="label" htmlFor="provider-kind">Type</label>
+          <select
+            id="provider-kind"
+            className="input"
+            value={kind}
+            onChange={(e) => setKind(e.target.value)}
+          >
+            {KINDS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+          {formError && <p className="error">{formError}</p>}
+          <div className="row">
+            <button type="button" className="btn" onClick={closeModal}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Save
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={pendingEdit !== null} title="Edit provider" onClose={closeEdit}>
-        <label className="label" htmlFor="provider-edit-name">Name</label>
-        <input
-          id="provider-edit-name"
-          className="input"
-          type="text"
-          autoComplete="off"
-          placeholder="My Workers account"
-          value={editName}
-          onChange={(e) => setEditName(e.target.value)}
-        />
-        <label className="label" htmlFor="provider-edit-kind">Type</label>
-        <select
-          id="provider-edit-kind"
-          className="input"
-          value={editKind}
-          onChange={(e) => setEditKind(e.target.value)}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleEdit();
+          }}
         >
-          {KINDS.map((k) => (
-            <option key={k} value={k}>
-              {k}
-            </option>
-          ))}
-        </select>
-        {editError && <p className="error">{editError}</p>}
-        <div className="row">
-          <button type="button" className="btn" onClick={closeEdit}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-primary" onClick={handleEdit}>
-            Save
-          </button>
-        </div>
+          <label className="label" htmlFor="provider-edit-name">Name</label>
+          <input
+            id="provider-edit-name"
+            className="input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="My Workers account"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+          />
+          <label className="label" htmlFor="provider-edit-kind">Type</label>
+          <select
+            id="provider-edit-kind"
+            className="input"
+            value={editKind}
+            onChange={(e) => setEditKind(e.target.value)}
+          >
+            {KINDS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+          {editError && <p className="error">{editError}</p>}
+          <div className="row">
+            <button type="button" className="btn" onClick={closeEdit}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary">
+              Save
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={pendingDelete !== null} title="Delete provider" onClose={() => setPendingDelete(null)}>
         <p>
           Delete <strong>{pendingDelete?.name}</strong>? This cannot be undone.
         </p>
+        {pendingDelete && isDefaultProvider(pendingDelete) && (
+          <p className="muted">
+            This is the default provider — new tunnels won't have one pre-selected after it's gone.
+          </p>
+        )}
+        {pendingInUse.length > 0 && (
+          <p className="error">
+            {pendingInUse.length} tunnel(s) use this provider ({pendingInUse.map((t) => t.name).join(", ")}).
+            Deleting unlinks them.
+          </p>
+        )}
         <div className="row">
           <button type="button" className="btn" onClick={() => setPendingDelete(null)}>
             Cancel
