@@ -10,7 +10,16 @@
  *   POST /api/hosts/:id/deny    -> { host, decision: "denied", ... } (also /decline, /cancel)
  *   POST /api/hosts/:id/decision {decision} -> set pending/allowed/denied
  *   WS  /api/agent/ws?host=ID   -> MAIN wss: CLI control socket (cf <-> cli talk,
- *                                  presence + decision + register-tunnel)
+ *                                  presence + decision + register-tunnel).
+ *                                  The worker also pushes
+ *                                  {"type":"tunnel-spec","tunnels":[{slug,target}]}
+ *                                  here whenever the user creates/edits/deletes
+ *                                  a tunnel, so a CLI in host mode
+ *                                  (`kstunnel --host ID`) auto-opens/closes
+ *                                  per-tunnel data sockets — no per-tunnel CLI
+ *                                  command needed. Current spec is re-sent to
+ *                                  every new agent and served at
+ *                                  GET /api/hosts/:id/tunnels/spec...
  *   WS  /api/hosts/:id/ws       -> browser watcher socket (role=watch, sends decision)
  *   WS  /api/ws?host=ID&role=.. -> generic alias for the two above
  *   GET /api/config?host=ID     -> { host, online, agents, decision, ... }
@@ -894,6 +903,17 @@ export default {
 
     // --- Browser watcher socket / HTTP status + decision -----------------------
     // WS   wss://<worker>/api/hosts/<id>/ws
+    // GET  https://<worker>/api/hosts/<id>/tunnels/spec -> desired tunnels
+    //        {host, tunnels:[{slug,target}]} (what a host-mode CLI should serve)
+    {
+      const specMatch = url.pathname.match(/^\/api\/hosts\/([^/]+)\/tunnels\/spec\/?$/);
+      if (specMatch && isValidHost(specMatch[1])) {
+        if (!env.HOST_PRESENCE) return json({ error: "presence not configured" }, 500);
+        const stub = stubFor(env, specMatch[1]);
+        return stub.fetch(`https://presence/tunnels/spec?host=${encodeURIComponent(specMatch[1])}`);
+      }
+    }
+    // WS   wss://<worker>/api/hosts/<id>/ws
     // GET  https://<worker>/api/hosts/<id>/status   -> {host,online,agents,decision,...}
     // GET  https://<worker>/api/hosts/<id>/decision -> {host,decision,...}
     // POST https://<worker>/api/hosts/<id>/allow    -> allow (browser Allow button)
@@ -1003,6 +1023,8 @@ export default {
                 }),
               }),
             );
+            // Refresh the host's desired spec so host-mode CLIs converge.
+            await pushTunnelSpec(env, host);
           }
         } catch {
           // registry touch is best-effort; the socket itself still works
@@ -1032,13 +1054,23 @@ export default {
         } catch {
           body = "";
         }
-        return reg.fetch(
+        const out = await reg.fetch(
           new Request("https://registry/register", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body,
           }),
         );
+        // A tunnel was created/edited: tell the host's CLI to open/update it.
+        if (out.ok) {
+          try {
+            const parsed = JSON.parse(body) as { host?: unknown };
+            if (typeof parsed?.host === "string") await pushTunnelSpec(env, parsed.host.trim());
+          } catch {
+            // ignore — CLI registry poll heals it within ~30s
+          }
+        }
+        return out;
       }
       return json({ error: "method not allowed" }, 405);
     }
@@ -1055,9 +1087,19 @@ export default {
           return reg.fetch(`https://registry/resolve?slug=${encodeURIComponent(slug)}`);
         }
         if (request.method === "DELETE") {
-          return reg.fetch(`https://registry/unregister?slug=${encodeURIComponent(slug)}`, {
+          // Learn the owning host first so its CLI can be told to close the socket.
+          let host = "";
+          try {
+            const res = await reg.fetch(`https://registry/resolve?slug=${encodeURIComponent(slug)}`);
+            if (res.ok) host = ((await res.json()) as TunnelEntry).host ?? "";
+          } catch {
+            host = "";
+          }
+          const out = await reg.fetch(`https://registry/unregister?slug=${encodeURIComponent(slug)}`, {
             method: "DELETE",
           });
+          if (out.ok && host) await pushTunnelSpec(env, host);
+          return out;
         }
         return json({ error: "method not allowed" }, 405);
       }
