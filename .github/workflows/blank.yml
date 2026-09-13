@@ -1,0 +1,439 @@
+name: KS Tunnel Testing
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ks-tunnel-testing-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          check-latest: true
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.7"
+          check-latest: true
+
+      - name: Verify environment
+        run: |
+          set -e
+
+          echo "===== Environment ====="
+          node --version
+          npm --version
+          go version
+          git --version
+          gh --version
+          echo "======================="
+
+      - name: Prepare Git
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin main >/dev/null 2>&1 || true
+          git checkout -B main origin/main
+
+          printf "node_modules/\n**/node_modules/\n" >> .git/info/exclude
+
+          echo "Git workspace ready."
+
+      - name: Build and start KS Tunnel
+        run: |
+          set -e
+
+          echo "===== KS Tunnel ====="
+
+          if [ -f go.mod ]; then
+            go mod download
+            go build -o /tmp/ks-tunnel ./...
+          elif [ -f main.go ]; then
+            go build -o /tmp/ks-tunnel .
+          else
+            echo "No Go project entrypoint found."
+            exit 1
+          fi
+
+          chmod +x /tmp/ks-tunnel
+
+          /tmp/ks-tunnel > /tmp/ks-tunnel.log 2>&1 &
+
+          KS_TUNNEL_PID=$!
+
+          echo "$KS_TUNNEL_PID" > /tmp/ks-tunnel.pid
+
+          sleep 3
+
+          if ! kill -0 "$KS_TUNNEL_PID" 2>/dev/null; then
+            echo "KS Tunnel stopped unexpectedly."
+            cat /tmp/ks-tunnel.log
+            exit 1
+          fi
+
+          echo "KS Tunnel is running."
+          echo "PID: $KS_TUNNEL_PID"
+
+      - name: Install Cloudflare Tunnel
+        run: |
+          set -e
+
+          curl -fL \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o /tmp/cloudflared
+
+          chmod +x /tmp/cloudflared
+
+          sudo install /tmp/cloudflared /usr/local/bin/cloudflared
+
+          cloudflared --version
+
+          nohup cloudflared tunnel run \
+            --token "eyJhIjoiZTJkZjY3MDI5ZWZlZTBmY2JhM2ExMjNjN2VmNTcxNTAiLCJ0IjoiNDdjOTdjYmItN2EwNC00MjIyLWJhY2UtZmM0MmU4ZmUxNDYyIiwicyI6Ik16RmpZVGM0WVRndE5HVTJZeTAwT0RZd0xUa3dOekl0TmpVMU4yUTBOekZoWkRnMCJ9" \
+            > /tmp/cloudflared.log 2>&1 &
+
+          CLOUDFLARED_PID=$!
+
+          echo "$CLOUDFLARED_PID" > /tmp/cloudflared.pid
+
+          sleep 5
+
+          if ! kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
+            echo "Cloudflare Tunnel failed to start."
+            cat /tmp/cloudflared.log
+            exit 1
+          fi
+
+          echo "Cloudflare Tunnel is running."
+
+      - name: Monitor KS Tunnel repository
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ks-tunnel-release
+          RELEASE_TITLE: KS Tunnel Release
+        run: |
+          set -e
+
+          START_TIME=$(date +%s)
+          END_TIME=$((START_TIME + 21000))
+
+          publish_release() {
+            local assets=("$@")
+
+            if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              if [ "${#assets[@]}" -gt 0 ]; then
+                gh release create \
+                  "$RELEASE_TAG" \
+                  "${assets[@]}" \
+                  --target "$(git rev-parse HEAD)" \
+                  --title "$RELEASE_TITLE" \
+                  --generate-notes \
+                  >/dev/null 2>&1 || true
+              else
+                gh release create \
+                  "$RELEASE_TAG" \
+                  --target "$(git rev-parse HEAD)" \
+                  --title "$RELEASE_TITLE" \
+                  --generate-notes \
+                  >/dev/null 2>&1 || true
+              fi
+
+              return 0
+            fi
+
+            if [ "${#assets[@]}" -gt 0 ]; then
+              gh release upload \
+                "$RELEASE_TAG" \
+                "${assets[@]}" \
+                --clobber \
+                >/dev/null 2>&1 || true
+            fi
+
+            gh release edit \
+              "$RELEASE_TAG" \
+              --title "$RELEASE_TITLE" \
+              --target "$(git rev-parse HEAD)" \
+              >/dev/null 2>&1 || true
+          }
+
+          collect_release_assets() {
+            RELEASE_ASSETS=()
+
+            while IFS= read -r FILE; do
+              if [ -f "$FILE" ]; then
+                RELEASE_ASSETS+=("$FILE")
+              fi
+            done < <(
+              git diff \
+                --cached \
+                --name-only \
+                --diff-filter=ACMRT \
+                -- \
+                'release/kstunnel/**' \
+                'release/kstunnel/**' \
+                'library/**' \
+                2>/dev/null
+            )
+          }
+
+          commit_local_changes() {
+            git add -A >/dev/null 2>&1 || true
+
+            git reset -- \
+              ':(glob)node_modules/**' \
+              ':(glob)**/node_modules/**' \
+              >/dev/null 2>&1 || true
+
+            if git diff --cached --quiet; then
+              return 0
+            fi
+
+            collect_release_assets
+
+            if git commit -m "Auto sync KS Tunnel changes" >/dev/null 2>&1; then
+              publish_release "${RELEASE_ASSETS[@]}"
+            fi
+
+            return 0
+          }
+
+          push_with_retry() {
+            for ATTEMPT in 1 2 3 4 5 6 7 8 9 10; do
+              if git push origin main:main >/dev/null 2>&1; then
+                return 0
+              fi
+
+              echo "Push attempt $ATTEMPT failed."
+
+              git fetch origin main >/dev/null 2>&1 || true
+
+              if ! git rebase --autostash origin/main >/dev/null 2>&1; then
+                git rebase --abort >/dev/null 2>&1 || true
+              fi
+
+              sleep 2
+            done
+
+            return 1
+          }
+
+          while true; do
+            CURRENT_TIME=$(date +%s)
+
+            if [ "$CURRENT_TIME" -ge "$END_TIME" ]; then
+              break
+            fi
+
+            if [ -f /tmp/ks-tunnel.pid ]; then
+              if ! kill -0 "$(cat /tmp/ks-tunnel.pid)" 2>/dev/null; then
+                echo "KS Tunnel process stopped."
+                echo "===== KS Tunnel Log ====="
+                cat /tmp/ks-tunnel.log 2>/dev/null || true
+                exit 1
+              fi
+            fi
+
+            git fetch origin main >/dev/null 2>&1 || true
+
+            git status \
+              --porcelain \
+              --untracked-files=all \
+              > /tmp/monitor-status.txt 2>/dev/null || true
+
+            grep -vE '(^|/)(node_modules)(/|$)' \
+              /tmp/monitor-status.txt \
+              > /tmp/monitor-status-clean.txt 2>/dev/null || true
+
+            if [ -s /tmp/monitor-status-clean.txt ]; then
+              commit_local_changes
+            fi
+
+            git fetch origin main >/dev/null 2>&1 || true
+
+            LOCAL_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "")
+            REMOTE_COMMIT=$(git rev-parse origin/main 2>/dev/null || echo "")
+
+            if [ -n "$LOCAL_COMMIT" ] && [ -n "$REMOTE_COMMIT" ]; then
+              if [ "$LOCAL_COMMIT" = "$REMOTE_COMMIT" ]; then
+                :
+
+              elif git merge-base --is-ancestor origin/main HEAD >/dev/null 2>&1; then
+                push_with_retry || true
+
+              elif git merge-base --is-ancestor HEAD origin/main >/dev/null 2>&1; then
+                git reset --hard origin/main >/dev/null 2>&1 || true
+
+              else
+                if ! git rebase --autostash origin/main >/dev/null 2>&1; then
+                  git rebase --abort >/dev/null 2>&1 || true
+                else
+                  push_with_retry || true
+                fi
+              fi
+            fi
+
+            sleep 25
+          done
+
+      - name: Final repository check
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ks-tunnel-release
+          RELEASE_TITLE: KS Tunnel Release
+        continue-on-error: true
+        run: |
+          git fetch origin main >/dev/null 2>&1 || true
+
+          git status \
+            --porcelain \
+            --untracked-files=all \
+            > /tmp/final-status.txt 2>/dev/null || true
+
+          grep -vE '(^|/)(node_modules)(/|$)' \
+            /tmp/final-status.txt \
+            > /tmp/final-status-clean.txt 2>/dev/null || true
+
+          if [ -s /tmp/final-status-clean.txt ]; then
+
+            git add -A >/dev/null 2>&1 || true
+
+            git reset -- \
+              ':(glob)node_modules/**' \
+              ':(glob)**/node_modules/**' \
+              >/dev/null 2>&1 || true
+
+            if ! git diff --cached --quiet; then
+
+              RELEASE_ASSETS=()
+
+              while IFS= read -r FILE; do
+                if [ -f "$FILE" ]; then
+                  RELEASE_ASSETS+=("$FILE")
+                fi
+              done < <(
+                git diff \
+                  --cached \
+                  --name-only \
+                  --diff-filter=ACMRT \
+                  -- \
+                  'release/kstunnel/**' \
+                  'library/**' \
+                  2>/dev/null
+              )
+
+              git commit -m "Final sync KS Tunnel changes" \
+                >/dev/null 2>&1 || true
+
+              git fetch origin main >/dev/null 2>&1 || true
+
+              if ! git rebase --autostash origin/main >/dev/null 2>&1; then
+                git rebase --abort >/dev/null 2>&1 || true
+              fi
+
+              for ATTEMPT in 1 2 3 4 5 6 7 8 9 10; do
+                if git push origin main:main >/dev/null 2>&1; then
+                  break
+                fi
+
+                git fetch origin main >/dev/null 2>&1 || true
+
+                if ! git rebase --autostash origin/main >/dev/null 2>&1; then
+                  git rebase --abort >/dev/null 2>&1 || true
+                fi
+
+                sleep 2
+              done
+
+              if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+                if [ "${#RELEASE_ASSETS[@]}" -gt 0 ]; then
+                  gh release create \
+                    "$RELEASE_TAG" \
+                    "${RELEASE_ASSETS[@]}" \
+                    --target "$(git rev-parse HEAD)" \
+                    --title "$RELEASE_TITLE" \
+                    --generate-notes \
+                    >/dev/null 2>&1 || true
+                else
+                  gh release create \
+                    "$RELEASE_TAG" \
+                    --target "$(git rev-parse HEAD)" \
+                    --title "$RELEASE_TITLE" \
+                    --generate-notes \
+                    >/dev/null 2>&1 || true
+                fi
+              else
+                if [ "${#RELEASE_ASSETS[@]}" -gt 0 ]; then
+                  gh release upload \
+                    "$RELEASE_TAG" \
+                    "${RELEASE_ASSETS[@]}" \
+                    --clobber \
+                    >/dev/null 2>&1 || true
+                fi
+
+                gh release edit \
+                  "$RELEASE_TAG" \
+                  --title "$RELEASE_TITLE" \
+                  --target "$(git rev-parse HEAD)" \
+                  >/dev/null 2>&1 || true
+              fi
+            fi
+
+          elif ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create \
+              "$RELEASE_TAG" \
+              --target "$(git rev-parse HEAD)" \
+              --title "$RELEASE_TITLE" \
+              --generate-notes \
+              >/dev/null 2>&1 || true
+          fi
+
+      - name: Stop KS Tunnel
+        if: always()
+        run: |
+          if [ -f /tmp/ks-tunnel.pid ]; then
+            kill "$(cat /tmp/ks-tunnel.pid)" 2>/dev/null || true
+          fi
+
+          pkill -f "/tmp/ks-tunnel" 2>/dev/null || true
+
+      - name: Stop Cloudflare Tunnel
+        if: always()
+        run: |
+          if [ -f /tmp/cloudflared.pid ]; then
+            kill "$(cat /tmp/cloudflared.pid)" 2>/dev/null || true
+          fi
+
+          pkill -f "cloudflared tunnel run" 2>/dev/null || true
+
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "===== KS Tunnel Log ====="
+          cat /tmp/ks-tunnel.log 2>/dev/null || true
+
+          echo "===== Cloudflare Log ====="
+          cat /tmp/cloudflared.log 2>/dev/null || true
