@@ -204,6 +204,16 @@ export class HostPresence implements DurableObject {
       host,
       online: agents > 0,
       agents,
+      decision: this.decision,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  private decisionMessage(host: string): DecisionMessage {
+    return {
+      type: "decision",
+      host,
+      decision: this.decision,
       timestamp: new Date().toISOString(),
     };
   }
@@ -219,6 +229,31 @@ export class HostPresence implements DurableObject {
     }
   }
 
+  private broadcastDecision(host: string): void {
+    const msg = JSON.stringify(this.decisionMessage(host));
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(msg);
+      } catch {
+        // ignore dead sockets
+      }
+    }
+  }
+
+  private async setDecision(host: string, decision: ConfigDecision): Promise<DecisionMessage> {
+    this.decision = decision;
+    try {
+      await this.ctx.storage.put("decision", decision);
+      await this.ctx.storage.put("decisionAt", new Date().toISOString());
+    } catch {
+      // ignore
+    }
+    this.broadcastDecision(host);
+    // Presence pollers also read decision from the snapshot.
+    this.broadcast(host);
+    return this.decisionMessage(host);
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const upgrade = request.headers.get("Upgrade") || request.headers.get("upgrade");
@@ -231,6 +266,43 @@ export class HostPresence implements DurableObject {
         await this.ctx.storage.put("host", seen);
       } catch {
         // ignore
+      }
+    }
+    const host = seen !== "unknown" ? seen : this.host;
+
+    // --- HTTP decision controls (forwarded by the Worker entrypoint) --------
+    // Internal paths: /decision/allow, /decision/deny, /decision, /status.
+    // POST wins; GET on /decision/allow|deny also applies (link fallback).
+    if (!upgrade || upgrade.toLowerCase() !== "websocket") {
+      const path = url.pathname;
+      if (path === "/decision/allow" || path.endsWith("/decision/allow")) {
+        const msg = await this.setDecision(host, "allowed");
+        return json(msg);
+      }
+      if (
+        path === "/decision/deny" ||
+        path.endsWith("/decision/deny") ||
+        path === "/decision/cancel" ||
+        path.endsWith("/decision/cancel")
+      ) {
+        const msg = await this.setDecision(host, "denied");
+        return json(msg);
+      }
+      if (path === "/decision" || path.endsWith("/decision")) {
+        if (request.method === "POST" || request.method === "PUT" || request.method === "PATCH") {
+          let body = "";
+          try {
+            body = await request.text();
+          } catch {
+            body = "";
+          }
+          const qsDecision = normalizeDecision(url.searchParams.get("decision"));
+          const next = decisionFromPayload(body) ?? qsDecision;
+          if (!next) return json({ error: "invalid decision (want allowed|denied|pending)" }, 400);
+          const msg = await this.setDecision(host, next);
+          return json(msg);
+        }
+        return json(this.decisionMessage(host));
       }
     }
 
@@ -250,21 +322,31 @@ export class HostPresence implements DurableObject {
       const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
       this.ctx.acceptWebSocket(server, [tag]);
 
-      const host = this.hostFromRequest(request);
+      const wsHost = this.hostFromRequest(request);
       // Immediately tell the newcomer (and everyone else) the current state.
+      // New sockets always get presence + the current decision, so a CLI that
+      // connects after the browser already clicked still learns allowed/denied,
+      // and a browser that opens late learns pending vs decided.
       try {
-        server.send(JSON.stringify(this.snapshot(host)));
+        server.send(JSON.stringify(this.snapshot(wsHost)));
       } catch {
         // ignore send race
       }
-      if (tag === "agent") this.broadcast(host);
+      try {
+        server.send(JSON.stringify(this.decisionMessage(wsHost)));
+      } catch {
+        // ignore send race
+      }
+      if (tag === "agent") this.broadcast(wsHost);
 
       return new Response(null, { status: 101, webSocket: client });
     }
 
     // --- HTTP status -------------------------------------------------------
-    const host = this.hostFromRequest(request);
-    return json(this.snapshot(host === "unknown" ? (url.searchParams.get("host") ?? "unknown") : host));
+    // Pending counts as OK: a missing/unknown decision is "not decided yet",
+    // so CLI waiting on it must keep waiting instead of treating 404 as fatal.
+    const httpHost = this.hostFromRequest(request);
+    return json(this.snapshot(httpHost === "unknown" ? (url.searchParams.get("host") ?? "unknown") : httpHost));
   }
 
   async webSocketMessage(
@@ -285,6 +367,29 @@ export class HostPresence implements DurableObject {
     if (trimmed === '{"type":"ping"}' || trimmed === "ping") {
       try {
         ws.send(JSON.stringify({ type: "pong", timestamp: new Date().toISOString() }));
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    // Browser Allow/Cancel arrives here as a watcher WS message, e.g.
+    // {"type":"decision","decision":"allowed"} or {"type":"deny"}.
+    // Persist it and relay to every socket (CLI agent + other watchers).
+    const next = decisionFromPayload(trimmed);
+    if (next) {
+      let target = this.host;
+      if (target === "unknown") {
+        try {
+          const stored = await this.ctx.storage.get<string>("host");
+          if (typeof stored === "string" && stored) target = stored;
+        } catch {
+          // ignore
+        }
+      }
+      const msg = await this.setDecision(target, next);
+      // Ack the sender directly too (broadcast already covered it).
+      try {
+        ws.send(JSON.stringify(msg));
       } catch {
         // ignore
       }
@@ -346,14 +451,19 @@ export default {
       return stub.fetch(fwd);
     }
 
-    // --- Browser watcher socket / HTTP status -------------------------------
-    // WS  wss://<worker>/api/hosts/<id>/ws
-    // GET https://<worker>/api/hosts/<id>/status
+    // --- Browser watcher socket / HTTP status + decision -----------------------
+    // WS   wss://<worker>/api/hosts/<id>/ws
+    // GET  https://<worker>/api/hosts/<id>/status   -> {host,online,agents,decision,...}
+    // GET  https://<worker>/api/hosts/<id>/decision -> {host,decision,...}
+    // POST https://<worker>/api/hosts/<id>/allow    -> allow (browser Allow button)
+    // POST https://<worker>/api/hosts/<id>/deny     -> deny (also /decline, /cancel)
+    // POST https://<worker>/api/hosts/<id>/decision {decision} -> set
     if (url.pathname.startsWith("/api/hosts/")) {
       const host = hostFromPath(url.pathname);
       if (!host) return json({ error: "invalid host id" }, 400);
       if (!env.HOST_PRESENCE) return json({ error: "presence not configured" }, 500);
       const stub = stubFor(env, host);
+      const action = actionFromPath(url.pathname);
       if (url.pathname.endsWith("/ws")) {
         const upgrade = request.headers.get("Upgrade") || request.headers.get("upgrade");
         if (!upgrade || upgrade.toLowerCase() !== "websocket") {
@@ -361,6 +471,28 @@ export default {
         }
         const fwd = new Request(
           `https://presence/api/hosts/${encodeURIComponent(host)}/ws?host=${encodeURIComponent(host)}&role=watch`,
+          request,
+        );
+        return stub.fetch(fwd);
+      }
+      if (action === "allow") {
+        const fwd = new Request(
+          `https://presence/decision/allow?host=${encodeURIComponent(host)}`,
+          request,
+        );
+        return stub.fetch(fwd);
+      }
+      if (action === "deny" || action === "decline" || action === "cancel") {
+        const fwd = new Request(
+          `https://presence/decision/deny?host=${encodeURIComponent(host)}`,
+          request,
+        );
+        return stub.fetch(fwd);
+      }
+      if (action === "decision") {
+        // GET returns current decision; POST/PUT/PATCH sets it.
+        const fwd = new Request(
+          `https://presence/decision?host=${encodeURIComponent(host)}`,
           request,
         );
         return stub.fetch(fwd);
@@ -374,6 +506,7 @@ export default {
           host,
           online: (data?.["online"] as boolean) ?? false,
           agents: (data?.["agents"] as number) ?? 0,
+          decision: (data?.["decision"] as string) ?? "pending",
           timestamp: (data?.["timestamp"] as string) ?? new Date().toISOString(),
         });
       }
@@ -381,7 +514,8 @@ export default {
     }
 
     // --- Generic alias -------------------------------------------------------
-    // WS /api/ws?host=ID&role=agent|watch | GET /api/ws?host=ID (status)
+    // WS /api/ws?host=ID&role=agent|watch | GET /api/ws?host=ID (status+decision)
+    // GET /api/config?host=ID (status+decision) | POST /api/config?host=ID {decision}
     if (url.pathname === "/api/ws" || url.pathname === "/api/config") {
       const host = requireHost(url);
       if (!host) return json({ error: "missing or invalid ?host=" }, 400);
@@ -396,12 +530,20 @@ export default {
         );
         return stub.fetch(fwd);
       }
+      if (request.method === "POST" || request.method === "PUT" || request.method === "PATCH") {
+        const fwd = new Request(
+          `https://presence/decision?host=${encodeURIComponent(host)}`,
+          request,
+        );
+        return stub.fetch(fwd);
+      }
       const res = await stub.fetch(`https://presence/status?host=${encodeURIComponent(host)}`);
       const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       return json({
         host,
         online: (data?.["online"] as boolean) ?? false,
         agents: (data?.["agents"] as number) ?? 0,
+        decision: (data?.["decision"] as string) ?? "pending",
         timestamp: (data?.["timestamp"] as string) ?? new Date().toISOString(),
       });
     }
