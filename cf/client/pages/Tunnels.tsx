@@ -279,7 +279,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
         </div>
       )}
 
-      <Modal open={modalOpen} title="Add tunnel" onClose={closeModal}>
+      <Modal open={modalOpen} title="Add tunnel" onClose={closeModal} wide>
         <div className="form-grid">
           <div>
             <label className="label" htmlFor="tunnel-name">Name</label>
@@ -382,7 +382,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
         </div>
       </Modal>
 
-      <Modal open={pendingEdit !== null} title="Edit tunnel" onClose={closeEdit}>
+      <Modal open={pendingEdit !== null} title="Edit tunnel" onClose={closeEdit} wide>
         <div className="form-grid">
           <div>
             <label className="label" htmlFor="tunnel-edit-name">Name</label>

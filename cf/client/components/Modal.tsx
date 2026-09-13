@@ -5,9 +5,10 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  wide?: boolean;
 }
 
-export function Modal({ open, title, children, onClose }: ModalProps) {
+export function Modal({ open, title, children, onClose, wide }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -22,7 +23,7 @@ export function Modal({ open, title, children, onClose }: ModalProps) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal"
+        className={`modal${wide ? " modal-wide" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
