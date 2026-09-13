@@ -144,6 +144,62 @@ func TestTunnelRoundtripOverWSS(t *testing.T) {
 	}
 }
 
+func writeServerText(c net.Conn, payload string) {
+	b := []byte(payload)
+	if len(b) < 126 {
+		c.Write([]byte{0x81, byte(len(b))})
+	} else if len(b) < 65536 {
+		c.Write([]byte{0x81, 126, byte(len(b) >> 8), byte(len(b))})
+	} else {
+		n := len(b)
+		c.Write([]byte{0x81, 127, 0, 0, 0, 0, byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)})
+	}
+	c.Write(b)
+}
+
+func readClientFrame(r *bufio.Reader) (string, byte, error) {
+	hdr := make([]byte, 2)
+	if _, err := io.ReadFull(r, hdr); err != nil {
+		return "", 0, err
+	}
+	opcode := hdr[0] & 0x0F
+	length := int64(hdr[1] & 0x7F)
+	if length == 126 {
+		ext := make([]byte, 2)
+		if _, err := io.ReadFull(r, ext); err != nil {
+			return "", 0, err
+		}
+		length = int64(ext[0])<<8 | int64(ext[1])
+	} else if length == 127 {
+		ext := make([]byte, 8)
+		if _, err := io.ReadFull(r, ext); err != nil {
+			return "", 0, err
+		}
+		length = 0
+		for _, b := range ext {
+			length = length<<8 | int64(b)
+		}
+	}
+	masked := hdr[1]&0x80 != 0
+	var mask []byte
+	if masked {
+		mask = make([]byte, 4)
+		if _, err := io.ReadFull(r, mask); err != nil {
+			return "", 0, err
+		}
+	}
+	payloadBytes := make([]byte, length)
+	if _, err := io.ReadFull(r, payloadBytes); err != nil {
+		return "", 0, err
+	}
+	if masked {
+		for i := range payloadBytes {
+			payloadBytes[i] ^= mask[i%4]
+		}
+	}
+	return string(payloadBytes), opcode, nil
+}
+
 // RunTunnel end-to-end against a fake Worker that speaks the real WS framing.
 func TestRunTunnelServesLocalPort(t *testing.T) {
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -208,33 +264,33 @@ func TestRunTunnelServesLocalPort(t *testing.T) {
 				fmt.Fprintf(c, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
 				// Ask the CLI for /hello like a visitor would.
 				payload := `{"type":"tunnel-request","id":"visit-1","method":"GET","path":"/","headers":{"accept":"text/html"},"bodyBase64":"","slug":"hello"}`
-				b := []byte(payload)
-				c.Write([]byte{0x81, byte(len(b))})
-				c.Write(b)
-				// Read the masked client response frame.
+				writeServerText(c, payload)
+				// Read masked client frames until the tunnel-response arrives
+				// (the CLI's immediate {"type":"ping"} hello must be skipped).
 				c.SetReadDeadline(time.Now().Add(10 * time.Second))
-				hdr := make([]byte, 2)
-				if _, err := io.ReadFull(r, hdr); err != nil {
-					return
+				for {
+					msg, opcode, err := readClientFrame(r)
+					if err != nil {
+						return
+					}
+					if opcode == 0x8 {
+						return
+					}
+					if opcode == 0x9 {
+						// ping -> pong (unmasked server->client)
+						c.Write([]byte{0x8A, 0x00})
+						continue
+					}
+					var tr TunnelResponse
+					if err := json.Unmarshal([]byte(msg), &tr); err != nil {
+						continue
+					}
+					if tr.Type != "tunnel-response" || tr.ID == "" {
+						continue // ping/presence noise
+					}
+					respCh <- tr
+					break
 				}
-				length := int64(hdr[1] & 0x7F)
-				if length == 126 {
-					ext := make([]byte, 2)
-					io.ReadFull(r, ext)
-					length = int64(ext[0])<<8 | int64(ext[1])
-				}
-				mask := make([]byte, 4)
-				io.ReadFull(r, mask)
-				payloadBytes := make([]byte, length)
-				io.ReadFull(r, payloadBytes)
-				for i := range payloadBytes {
-					payloadBytes[i] ^= mask[i%4]
-				}
-				var tr TunnelResponse
-				if err := json.Unmarshal(payloadBytes, &tr); err != nil {
-					return
-				}
-				respCh <- tr
 				time.Sleep(500 * time.Millisecond)
 			}(conn, br)
 		}
