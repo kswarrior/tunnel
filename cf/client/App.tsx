@@ -3,8 +3,10 @@ import { Header } from "./components/Header";
 import { Sidebar, type NavKey } from "./components/Sidebar";
 import { HomePage } from "./pages/Home";
 import { TunnelsPage } from "./pages/Tunnels";
+import { HostsPage } from "./pages/Hosts";
 import { ProvidersPage } from "./pages/Providers";
 import { SettingsPage } from "./pages/Settings";
+import { useHosts, useProviders, useTunnels } from "./pages/store";
 import type { WorkerStatus } from "./pages/types";
 
 type HelloResponse = {
@@ -77,6 +79,9 @@ export default function App(): JSX.Element {
   const [nav, setNav] = useState<NavKey>("home");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { status, refresh } = useWorkerStatus();
+  const tunnels = useTunnels();
+  const hosts = useHosts();
+  const providers = useProviders();
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
@@ -118,10 +123,40 @@ export default function App(): JSX.Element {
         <Sidebar active={nav} open={sidebarOpen} onNavigate={handleNavigate} />
         <main className="content" aria-hidden={sidebarOpen ? true : undefined}>
           {nav === "home" && (
-            <HomePage status={status} onRefresh={refresh} onGoTunnels={() => setNav("tunnels")} />
+            <HomePage
+              status={status}
+              tunnels={tunnels.items}
+              hosts={hosts.items}
+              providers={providers.items}
+              onRefresh={refresh}
+              onGo={(key) => setNav(key)}
+            />
           )}
-          {nav === "tunnels" && <TunnelsPage status={status} onRefresh={refresh} />}
-          {nav === "providers" && <ProvidersPage />}
+          {nav === "tunnels" && (
+            <TunnelsPage
+              tunnels={tunnels.items}
+              onAdd={tunnels.add}
+              onToggle={(id) => {
+                const found = tunnels.items.find((t) => t.id === id);
+                if (found) tunnels.update(id, { active: !found.active });
+              }}
+              onRemove={tunnels.remove}
+            />
+          )}
+          {nav === "hosts" && (
+            <HostsPage hosts={hosts.items} onAdd={hosts.add} onRemove={hosts.remove} />
+          )}
+          {nav === "providers" && (
+            <ProvidersPage
+              providers={providers.items}
+              onAdd={providers.add}
+              onToggle={(id) => {
+                const found = providers.items.find((p) => p.id === id);
+                if (found) providers.update(id, { active: !found.active });
+              }}
+              onRemove={providers.remove}
+            />
+          )}
           {nav === "settings" && <SettingsPage />}
         </main>
       </div>
