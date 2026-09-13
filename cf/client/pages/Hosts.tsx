@@ -47,6 +47,46 @@ function HostCard({
   const [copied, setCopied] = useState(false);
 
   const linked = tunnels.filter((t) => t.hostId === host.id);
+  const liveSlugs = presence.tunnels;
+  const liveLinked = linked.filter((t) => liveSlugs.includes(t.slug));
+  const liveCount = probe ? liveLinked.length : 0;
+
+  const agentDot = !probe || presence.online === null
+    ? "dot-idle"
+    : presence.online === true
+      ? "dot-on"
+      : "dot-off";
+  const tunnelsDot = linked.length === 0
+    ? "dot-idle"
+    : !probe
+      ? "dot-idle"
+      : liveCount === linked.length
+        ? "dot-on"
+        : liveCount > 0
+          ? "dot-on"
+          : "dot-off";
+
+  const agentText = !probe
+    ? "Agent: saved"
+    : presence.online === null
+      ? "Agent: checking…"
+      : presence.online === true
+        ? "Agent: online"
+        : "Agent: offline";
+  const tunnelsText = linked.length === 0
+    ? "Tunnels: none linked"
+    : !probe
+      ? `Tunnels: ${linked.length} linked`
+      : `Tunnels live: ${liveCount}/${linked.length}`;
+
+  const hostCmd = `kstunnel --host ${token}`;
+
+  const handleCopy = async () => {
+    if (await copyText(probe ? hostCmd : token)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
+  };
 
   const label = !probe ? (
     <span className="badge">Saved</span>
@@ -58,34 +98,32 @@ function HostCard({
     <span className="badge">Checking…</span>
   );
 
-  const handleCopy = async () => {
-    if (await copyText(token)) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    }
-  };
-
   return (
     <EntityCard
       icon={<GlobeIcon />}
-      name={host.hostname}
+      name={
+        <>
+          {host.hostname} <span className="badge">{linked.length}</span>
+        </>
+      }
+      sub={linked.length === 0 ? "No tunnels linked" : linked.map((t) => `/${t.slug}`).join(", ")}
       label={label}
       notes={
         <span>
-          <span className="muted">
-            {linked.length === 0
-              ? "No tunnels linked"
-              : `Tunnels: ${linked.map((t) => `/${t.slug}`).join(", ")}`}
-          </span>
-          {probe && presence.tunnels.length > 0 && (
-            <span className="muted" style={{ display: "block" }}>
-              Live wss: {presence.tunnels.map((s) => `/${s}`).join(", ")}
+          <span className="presence-row">
+            <span className="presence">
+              <span className={`dot ${agentDot}`} aria-hidden="true" />
+              {agentText}
             </span>
-          )}
+            <span className="presence">
+              <span className={`dot ${tunnelsDot}`} aria-hidden="true" />
+              {tunnelsText}
+            </span>
+          </span>
           {probe && (
             <span className="muted" style={{ display: "block", marginTop: 4 }}>
-              <code>kstunnel --host {token} --tunnel &lt;slug&gt; --target 127.0.0.1:PORT</code>
-              {copied && " — id copied!"}
+              <code>{hostCmd}</code>
+              {copied && " — copied!"}
             </span>
           )}
         </span>
@@ -95,7 +133,7 @@ function HostCard({
           ? [
               {
                 key: "copy",
-                label: "Copy host id",
+                label: probe ? "Copy host command" : "Copy host id",
                 icon: <CopyIcon />,
                 onClick: () => void handleCopy(),
               } as const,
