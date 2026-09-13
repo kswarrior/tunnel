@@ -909,13 +909,15 @@ function tunnelStatusPage(opts: {
   status: number;
   heading: string;
   slug: string;
+  /** Public path as visited, e.g. /!tunnel=ks (shown in title/kicker). */
+  pathShown: string;
   intro: string;
   facts: string[];
   cliCmd: string;
   /** Host to poll for liveness; null polls the registry until the slug is published. */
   pollHost: string | null;
 }): Response {
-  const { status, heading, slug, intro, facts, cliCmd, pollHost } = opts;
+  const { status, heading, slug, pathShown, intro, facts, cliCmd, pollHost } = opts;
   const factsHtml = facts.map((f) => `<li>${escHtml(f)}</li>`).join("");
   const seedLog = facts.map((f) => `• ${f}`).join("\n");
   const pollJs = pollHost
@@ -947,7 +949,7 @@ function tunnelStatusPage(opts: {
     "<head>\n" +
     '<meta charset="utf-8">\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-    `<title>/${escHtml(slug)} — ${escHtml(heading)} · KS Tunnel</title>\n` +
+    `<title>${escHtml(pathShown)} — ${escHtml(heading)} · KS Tunnel</title>\n` +
     "<style>\n" +
     "body{font-family:system-ui,-apple-system,sans-serif;background:#0f141b;color:#e6ebf2;margin:0;padding:32px 16px}\n" +
     "main{max-width:640px;margin:0 auto}\n" +
@@ -963,7 +965,7 @@ function tunnelStatusPage(opts: {
     "</head>\n" +
     "<body>\n" +
     "<main>\n" +
-    `<p class="kicker">KS Tunnel · <code>/${escHtml(slug)}</code></p>\n` +
+    `<p class="kicker">KS Tunnel · <code>${escHtml(pathShown)}</code></p>\n` +
     `<h1><span class="spin"></span>${escHtml(heading)}</h1>\n` +
     `<p>${escHtml(intro)}</p>\n` +
     `<ul>${factsHtml}</ul>\n` +
@@ -995,14 +997,15 @@ function tunnelStatusPage(opts: {
 }
 
 /** 404 when /<slug> has nothing published: text for machines, log page for browsers. */
-function tunnelNotPublishedResponse(request: Request, slug: string): Response {
+function tunnelNotPublishedResponse(request: Request, slug: string, pathShown?: string): Response {
+  const shown = pathShown ?? `/${slug}`;
   const text =
-    `No tunnel published at /${slug}.\n` +
+    `No tunnel published at ${shown}.\n` +
     `The Host "Connected" dot and the tunnel "Enabled" toggle alone do not expose a port.\n` +
     `1) Tunnels card must show Live + registry: published (not just Enabled).\n` +
     `2) Publish: re-save the tunnel in the UI, or POST /api/tunnels {"slug":"${slug}","host":"<id-from-Hosts>","target":"127.0.0.1:PORT"}.\n` +
     `3) Serve: kstunnel --host <id-from-Hosts> (host mode, auto-serves) or kstunnel --host <id> --tunnel ${slug} --target 127.0.0.1:PORT (keep running).\n` +
-    `Then reload /${slug} — it proxies that host's local port fullscreen via wss (cli -> workers -> you).`;
+    `Then reload ${shown} — it proxies that host's local port fullscreen via wss (cli -> workers -> you).`;
   if (!wantsHtmlPage(request)) {
     return new Response(text, {
       status: 404,
@@ -1013,6 +1016,7 @@ function tunnelNotPublishedResponse(request: Request, slug: string): Response {
     status: 404,
     heading: "No tunnel published here yet",
     slug,
+    pathShown: shown,
     intro: "Nothing is published at this path, so there is nothing to show yet. This page keeps checking and reloads itself once the tunnel is published and live.",
     facts: [
       `slug /${slug} is not in the worker registry`,
@@ -1031,7 +1035,9 @@ async function tunnelOfflineResponse(
   entry: TunnelEntry,
   errText: string,
   code: number,
+  pathShown?: string,
 ): Promise<Response> {
+  const shown = pathShown ?? `/${entry.slug}`;
   const presence = await presenceSnapshot(env, entry.host);
   const live = presence?.tunnels ?? [];
   const cliCmd = `kstunnel --host ${entry.host} --tunnel ${entry.slug} --target ${entry.target}`;
@@ -1057,6 +1063,7 @@ async function tunnelOfflineResponse(
     status: code,
     heading: "Tunnel offline — waiting…",
     slug: entry.slug,
+    pathShown: shown,
     intro: "The tunnel is published, but no live tunnel socket is serving it right now. This page keeps checking the host and reloads itself once the tunnel is live.",
     facts,
     cliCmd: `${cliCmd}\n# or host mode (auto-serves all tunnels):\nkstunnel --host ${entry.host}`,
@@ -1338,11 +1345,12 @@ export default {
       });
     }
 
-    // --- Public tunnel proxy: /<slug> shows the host's local port --------
+    // --- Public tunnel proxy: /!tunnel=<slug> shows the host's local port --
     // FULLSCREEN: returns the upstream bytes verbatim (status+headers+body),
     // no KS Tunnel chrome — only the wss of that port (cli -> workers -> you).
-    // e.g. tunnel { slug:"hello", target:"127.0.0.1:4757" } => GET /hello
+    // e.g. tunnel { slug:"hello", target:"127.0.0.1:4757" } => GET /!tunnel=hello
     // proxies http://127.0.0.1:4757/ through the per-tunnel wss.
+    // Legacy /<slug> form proxies the same way (old links keep working).
     if (
       env.TUNNEL_REGISTRY &&
       env.HOST_PRESENCE &&
@@ -1353,8 +1361,36 @@ export default {
     ) {
       const segs = url.pathname.split("/").filter(Boolean);
       if (segs.length >= 1) {
-        const maybeSlug = normalizeSlug(segs[0]);
-        // Skip vite/dev + well-known + file-like paths unless registered.
+        // Canonical public form: /!tunnel=<slug>[/...] — unambiguous, never
+        // collides with the app or its assets, and never falls back to the
+        // SPA. Legacy form /<slug>[/...] is still proxied (old links work).
+        let maybeSlug = "";
+        let rest = "/";
+        let isNewForm = false;
+        const firstLower = segs[0].toLowerCase();
+        if (firstLower === "!tunnel" || firstLower.startsWith("!tunnel=")) {
+          isNewForm = true;
+          maybeSlug = normalizeSlug(firstLower.startsWith("!tunnel=") ? segs[0].slice(8) : "");
+          rest = segs.length > 1 ? "/" + segs.slice(1).join("/") : "/";
+          if (!isValidSlug(maybeSlug)) {
+            const text =
+              `invalid tunnel path ${JSON.stringify(url.pathname)} ` +
+              `(want /!tunnel=<slug>[/...], slug 2-32 chars: a-z, 0-9, hyphen, like /!tunnel=hello)`;
+            return new Response(text + "\n", {
+              status: 404,
+              headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+            });
+          }
+        } else {
+          const cand = normalizeSlug(segs[0]);
+          // Skip vite/dev + well-known + file-like paths unless registered.
+          if (isValidSlug(cand)) {
+            maybeSlug = cand;
+            rest = segs.length > 1 ? "/" + segs.slice(1).join("/") : "/";
+          }
+        }
+        // Public path shown on status pages (canonical form when used).
+        const pathShown = isNewForm ? `/!tunnel=${maybeSlug}` : `/${maybeSlug}`;
         if (isValidSlug(maybeSlug)) {
           let entry: TunnelEntry | null = null;
           try {
@@ -1365,7 +1401,6 @@ export default {
             entry = null;
           }
           if (entry && entry.host) {
-            const rest = segs.length > 1 ? "/" + segs.slice(1).join("/") : "/";
             const targetPath = rest + url.search;
             // Read visitor body (if any) for POST/PUT/etc.
             let bodyBase64 = "";
@@ -1419,6 +1454,7 @@ export default {
                 entry,
                 `Tunnel error — could not reach host ${entry.host}. Is the CLI running?`,
                 502,
+                pathShown,
               );
             }
             if (!bridge.ok) {
@@ -1430,7 +1466,7 @@ export default {
                     ? (errData["error"] as string)
                     : "Tunnel unavailable";
               const code = bridge.status === 504 ? 504 : 502;
-              return tunnelOfflineResponse(request, env, entry, msg, code);
+              return tunnelOfflineResponse(request, env, entry, msg, code, pathShown);
             }
             const payload = (await bridge.json().catch(() => null)) as {
               status?: number;
@@ -1464,10 +1500,15 @@ export default {
           // web UI itself instead of the tunneled port. Only intercept
           // extensionless tunnel-like paths so real assets (/assets/*.js,
           // files with extensions) still serve normally.
+          // Canonical /!tunnel= form never falls back to the SPA: nothing
+          // under it is a real asset, so an unregistered slug 404s here.
+          if (isNewForm) {
+            return tunnelNotPublishedResponse(request, maybeSlug, pathShown);
+          }
           const lastSeg = segs[segs.length - 1] ?? "";
           const assetLike = segs[0] === "assets" || lastSeg.includes(".");
           if (!assetLike) {
-            return tunnelNotPublishedResponse(request, maybeSlug);
+            return tunnelNotPublishedResponse(request, maybeSlug, pathShown);
           }
         }
       }
