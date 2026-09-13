@@ -40,7 +40,11 @@ export function isSlug(value: string): boolean {
 export const TUNNEL_TYPES = ["HTTP"] as const;
 
 export function isTarget(value: string): boolean {
-  return /^[A-Za-z0-9_.-]+:\d{1,5}$/.test(value.trim());
+  const clean = value.trim().replace(/^https?:\/\//i, "").split("/")[0];
+  const m = clean.match(/^([A-Za-z0-9_.-]+):(\d{1,5})$/);
+  if (!m) return false;
+  const port = Number(m[2]);
+  return port >= 1 && port <= 65535;
 }
 
 export function isHostname(value: string): boolean {
@@ -49,19 +53,43 @@ export function isHostname(value: string): boolean {
 
 function useCollection<T extends { id: string }>(
   key: string,
-  isDuplicate?: (prev: T, next: T) => boolean,
+  opts?: {
+    isDuplicate?: (prev: T, next: T) => boolean;
+    /** Normalize legacy rows on first load so state is healed (not just the view). */
+    heal?: (raw: T) => T;
+    /** True when a healed row differs and must be persisted. */
+    needsHeal?: (before: T, after: T) => boolean;
+  },
 ) {
+  const isDuplicate = opts?.isDuplicate;
   const [items, setItems] = useState<T[]>(() => {
-    const initial = read<T>(key);
+    let initial = read<T>(key);
+    if (opts?.heal) {
+      const healed = initial.map((r) => opts.heal!(r));
+      if (opts.needsHeal && healed.some((h, i) => opts.needsHeal!(initial[i], h))) {
+        write(key, healed);
+        initial = healed;
+      } else if (!opts.needsHeal) {
+        // Persist shape upgrades best-effort (compare by JSON).
+        try {
+          if (JSON.stringify(initial) !== JSON.stringify(healed)) {
+            write(key, healed);
+            initial = healed;
+          }
+        } catch {
+          initial = healed;
+        }
+      }
+    }
     // Heal legacy duplicates already sitting in localStorage
     // (e.g. two cards for the same hostname after Allow).
     if (!isDuplicate || initial.length < 2) return initial;
-    const healed: T[] = [];
+    const deduped: T[] = [];
     for (const item of initial) {
-      if (!healed.some((h) => h.id === item.id || isDuplicate(h, item))) healed.push(item);
+      if (!deduped.some((h) => h.id === item.id || isDuplicate(h, item))) deduped.push(item);
     }
-    if (healed.length !== initial.length) write(key, healed);
-    return healed;
+    if (deduped.length !== initial.length) write(key, deduped);
+    return deduped;
   });
 
   const add = useCallback(
@@ -155,31 +183,26 @@ export function newProvider(name: string, kind: string): Provider {
 export const DEFAULT_PROVIDER_NAME = "KS Tunnel";
 
 export function useTunnels() {
-  const col = useCollection<Tunnel>("ks-tunnels");
-  // Heal legacy tunnels saved before slug/type/host/provider existed.
-  const healed = col.items.map(healTunnel);
-  const needsHeal = healed.some((h, i) => {
-    const o = col.items[i] as Partial<Tunnel>;
-    return o.slug !== h.slug || o.tunnelType !== h.tunnelType || o.hostId !== h.hostId || o.providerId !== h.providerId;
+  return useCollection<Tunnel>("ks-tunnels", {
+    isDuplicate: sameTunnelSlug,
+    heal: healTunnel,
+    needsHeal: (before, after) =>
+      (before as Partial<Tunnel>).slug !== after.slug ||
+      (before as Partial<Tunnel>).tunnelType !== after.tunnelType ||
+      (before as Partial<Tunnel>).hostId !== after.hostId ||
+      (before as Partial<Tunnel>).providerId !== after.providerId,
   });
-  useEffect(() => {
-    if (needsHeal) {
-      try {
-        localStorage.setItem("ks-tunnels", JSON.stringify(healed));
-      } catch {
-        // ignore
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needsHeal]);
-  // Return healed view immediately so the form/dropdowns work even before
-  // the persisted heal lands.
-  return needsHeal ? { ...col, items: healed } : col;
+}
+
+function sameTunnelSlug(a: Tunnel, b: Tunnel): boolean {
+  const sa = normalizeSlug(a.slug || "");
+  const sb = normalizeSlug(b.slug || "");
+  return !!sa && sa === sb;
 }
 
 export function useHosts() {
   // Same hostname (case-insensitive) = same host, even with different ids.
-  return useCollection<Host>("ks-hosts", sameHostname);
+  return useCollection<Host>("ks-hosts", { isDuplicate: sameHostname });
 }
 
 function sameHostname(a: Host, b: Host): boolean {
