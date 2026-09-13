@@ -162,12 +162,10 @@ function TunnelCard({
           ) : (
             <span className="presence-row">
               <span className="presence">
-                <span className={`dot ${agentDot}`} aria-hidden="true" />
-                {agentText}
+                <span className={`dot ${agentDot}`} title={agentText} role="img" aria-label={agentText} />
               </span>
               <span className="presence">
-                <span className={`dot ${tunnelDot}`} aria-hidden="true" />
-                {tunnelText}
+                <span className={`dot ${tunnelDot}`} title={tunnelText} role="img" aria-label={tunnelText} />
               </span>
             </span>
           )}

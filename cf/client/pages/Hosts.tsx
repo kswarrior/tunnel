@@ -78,6 +78,8 @@ function HostCard({
     : !probe
       ? `Tunnels: ${linked.length} linked`
       : `Tunnels live: ${liveCount}/${linked.length}`;
+  // Live count as a tag (e.g. 1/1); plain total when no live data exists.
+  const tunnelsTag = probe !== null && linked.length > 0 ? `${liveCount}/${linked.length}` : `${linked.length}`;
 
   const hostCmd = `kstunnel --host ${token}`;
 
@@ -118,12 +120,11 @@ function HostCard({
           ) : (
             <span className="presence-row">
               <span className="presence">
-                <span className={`dot ${agentDot}`} aria-hidden="true" />
-                {agentText}
+                <span className={`dot ${agentDot}`} title={agentText} role="img" aria-label={agentText} />
               </span>
               <span className="presence">
-                <span className={`dot ${tunnelsDot}`} aria-hidden="true" />
-                {tunnelsText}
+                <span className={`dot ${tunnelsDot}`} title={tunnelsText} role="img" aria-label={tunnelsText} />
+                Tunnels <span className="badge" title={tunnelsText}>{tunnelsTag}</span>
               </span>
             </span>
           )}
