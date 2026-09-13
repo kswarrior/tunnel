@@ -442,6 +442,10 @@ select.input {
   color: var(--primary-active);
 }
 
+.error {
+  color: var(--danger);
+}
+
 .success {
   color: var(--primary-active);
 }
