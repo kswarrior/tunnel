@@ -65,9 +65,17 @@ body {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 600;
   font-size: 16px;
   white-space: nowrap;
+}
+
+.brand-icon {
+  display: block;
+  flex: 0 0 auto;
 }
 
 .header-spacer {
