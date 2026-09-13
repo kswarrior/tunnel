@@ -96,7 +96,6 @@ function TunnelCard({
   const token = hostToken(hosts, tunnel.hostId);
   const probe = isConfigHostId(token) ? token : null;
   const presence = useHostPresence(probe);
-  const [copied, setCopied] = useState(false);
 
   const agentKnown = probe !== null;
   const agentOnline = presence.online === true;
@@ -118,10 +117,7 @@ function TunnelCard({
     : `kstunnel --host <id> --tunnel ${tunnel.slug} --target ${tunnel.target}`;
 
   const handleCopy = async () => {
-    if (await copyText(cliCmd)) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    }
+    await copyText(cliCmd);
   };
 
   const agentDot = !agentKnown || presence.online === null
@@ -162,15 +158,11 @@ function TunnelCard({
               {tunnelText}
             </span>
           </span>
-          <span className="muted" style={{ display: "block", marginTop: 4 }}>
-            <code>{cliCmd}</code>
-            {copied && " — copied!"}
-          </span>
           {tunnel.active && !tunnelLive && (
             <span className="error" style={{ display: "block", marginTop: 4 }}>
               Enabled locally, but the CLI tunnel wss is not connected — /{tunnel.slug} will not show {tunnel.target}.
-              Run the command above on the host machine and keep it running
-              {token ? ` (or run kstunnel --host ${token} once to auto-serve every published tunnel)` : " (or run the host in host mode to auto-serve every published tunnel)"}.
+              Run the CLI on the host machine and keep it running
+              {" (or run the host in host mode to auto-serve every published tunnel)"}.
             </span>
           )}
           {tunnelLive && !published && (

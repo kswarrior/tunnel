@@ -44,7 +44,6 @@ function HostCard({
   const token = host.hostname.trim();
   const probe = CONFIG_HOST_RE.test(token) ? token : null;
   const presence = useHostPresence(probe);
-  const [copied, setCopied] = useState(false);
 
   const linked = tunnels.filter((t) => t.hostId === host.id);
   const liveSlugs = presence.tunnels;
@@ -82,10 +81,7 @@ function HostCard({
   const hostCmd = `kstunnel --host ${token}`;
 
   const handleCopy = async () => {
-    if (await copyText(probe ? hostCmd : token)) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    }
+    await copyText(probe ? hostCmd : token);
   };
 
   const label = !probe ? (
@@ -120,12 +116,6 @@ function HostCard({
               {tunnelsText}
             </span>
           </span>
-          {probe && (
-            <span className="muted" style={{ display: "block", marginTop: 4 }}>
-              <code>{hostCmd}</code>
-              {copied && " — copied!"}
-            </span>
-          )}
         </span>
       }
       actions={[
