@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -117,6 +118,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, format+"\n", a...)
 	}
 	if err := kstunnel.RunAgent(ctx, workerBase, hostID, logf); err != nil && err != context.Canceled {
+		if errors.Is(err, kstunnel.ErrDenied) {
+			fmt.Fprintf(os.Stderr, "Canceled by browser — host %s was not saved.\n", hostID)
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

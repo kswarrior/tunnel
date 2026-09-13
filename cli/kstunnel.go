@@ -443,9 +443,16 @@ func wsServe(conn net.Conn, br *bufio.Reader, onText func(string)) error {
 	}
 }
 
-// RunAgent holds the presence WSS connection open for hostID until ctx ends.
+// RunAgent holds the presence WSS connection open for hostID until ctx ends
+// or the browser denies it.
+//
 // It dials AgentWSURL(workerBase, hostID), heartbeats with {"type":"ping"},
-// and reconnects with backoff. Log lines go to logf (nil = discard).
+// and reconnects with backoff. While the decision is pending (including
+// unknown/missing = not decided yet) it keeps waiting — that is OK, not an
+// error. Log lines go to logf (nil = discard).
+//
+//   - Browser Allow  -> {"type":"decision","decision":"allowed"}  -> log + stay alive.
+//   - Browser Cancel -> {"type":"decision","decision":"denied"}   -> return ErrDenied (stop, no retry).
 func RunAgent(ctx context.Context, workerBase, hostID string, logf func(string, ...any)) error {
 	if logf == nil {
 		logf = func(string, ...any) {}
@@ -458,6 +465,7 @@ func RunAgent(ctx context.Context, workerBase, hostID string, logf func(string, 
 		return err
 	}
 	backoff := time.Second
+	allowedLogged := false
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -477,11 +485,30 @@ func RunAgent(ctx context.Context, workerBase, hostID string, logf func(string, 
 		logf("wss connected (host %s) — green dot should show on the web UI", hostID)
 		backoff = time.Second
 
+		denyCh := make(chan struct{}, 1)
+		allowCh := make(chan struct{}, 4)
 		done := make(chan error, 1)
 		go func() {
 			done <- wsServe(conn, br, func(msg string) {
-				// Presence broadcasts land here; keep quiet unless useful.
-				_ = msg
+				decision, ok := ParseDecisionMessage(msg)
+				if !ok {
+					// Presence broadcasts and pongs land here; keep quiet.
+					return
+				}
+				switch decision {
+				case DecisionDenied:
+					select {
+					case denyCh <- struct{}{}:
+					default:
+					}
+				case DecisionAllowed:
+					select {
+					case allowCh <- struct{}{}:
+					default:
+					}
+				default:
+					// pending = not decided yet = OK, keep waiting.
+				}
 			})
 		}()
 
@@ -496,6 +523,17 @@ func RunAgent(ctx context.Context, workerBase, hostID string, logf func(string, 
 				conn.Close()
 				ticker.Stop()
 				return ctx.Err()
+			case <-denyCh:
+				ticker.Stop()
+				_ = wsWriteFrame(conn, 0x8, []byte{})
+				conn.Close()
+				logf("canceled by browser — not saved (host %s)", hostID)
+				return ErrDenied
+			case <-allowCh:
+				if !allowedLogged {
+					allowedLogged = true
+					logf("allowed by browser — host %s saved, staying connected (Ctrl+C to stop)...", hostID)
+				}
 			case err := <-done:
 				if err != nil && err != io.EOF {
 					logf("connection lost: %v (reconnecting...)", err)
