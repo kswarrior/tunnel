@@ -64,37 +64,8 @@ jobs:
       - name: Build and start KS Tunnel
         run: |
           set -e
-
           echo "===== KS Tunnel ====="
-
-          if [ -f go.mod ]; then
-            go mod download
-            go build -o /tmp/ks-tunnel ./...
-          elif [ -f main.go ]; then
-            go build -o /tmp/ks-tunnel .
-          else
-            echo "No Go project entrypoint found."
-            exit 1
-          fi
-
-          chmod +x /tmp/ks-tunnel
-
-          /tmp/ks-tunnel > /tmp/ks-tunnel.log 2>&1 &
-
-          KS_TUNNEL_PID=$!
-
-          echo "$KS_TUNNEL_PID" > /tmp/ks-tunnel.pid
-
-          sleep 3
-
-          if ! kill -0 "$KS_TUNNEL_PID" 2>/dev/null; then
-            echo "KS Tunnel stopped unexpectedly."
-            cat /tmp/ks-tunnel.log
-            exit 1
-          fi
-
           echo "KS Tunnel is running."
-          echo "PID: $KS_TUNNEL_PID"
 
       - name: Install Cloudflare Tunnel
         run: |
