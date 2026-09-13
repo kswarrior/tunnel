@@ -117,9 +117,7 @@ func TestFetchLocalProxiesStatusHeadersBody(t *testing.T) {
 	}
 }
 
-// Full data-plane roundtrip: fake local HTTP + fake Worker tunnel-wss server.
-// Proves cli -> workers -> users bridging: tunnel-request in, tunnel-response
-// out with the local :PORT bytes.
+// Data-plane encode path: proves cli -> workers bridging keeps local bytes.
 func TestTunnelRoundtripOverWSS(t *testing.T) {
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/plain; charset=utf-8")
@@ -128,43 +126,6 @@ func TestTunnelRoundtripOverWSS(t *testing.T) {
 	defer local.Close()
 	localTarget := strings.TrimPrefix(local.URL, "http://")
 
-	// Fake Worker: accepts one tunnel-wss, sends one tunnel-request, reads
-	// the masked client response frame and checks it bridges local bytes.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	defer ln.Close()
-	gotResp := make(chan TunnelResponse, 1)
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		br := bufio.NewReader(conn)
-		for {
-			line, err := br.ReadString('\n')
-			if err != nil {
-				return
-			}
-			if strings.TrimSpace(line) == "" {
-				break
-			}
-		}
-		// Minimal 101 (skip Sec-WebSocket-Accept verification — client checks).
-		fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: bogus\r\n\r\n")
-		// NOTE: accept-key check happens client-side; send request regardless.
-		// Re-do handshake properly: read key first? handshake_test does it;
-		// here we cheat — instead use a real key exchange below.
-		_ = gotResp
-		_ = br
-	}()
-	_ = ln
-	_ = gotResp
-
-	// Simpler deterministic check without a fragile fake WS server:
-	// exercise the exact encode/decode path RunTunnel uses.
 	req := TunnelRequest{Type: "tunnel-request", ID: "r-e2e", Method: "GET", Path: "/hello", Headers: map[string]string{}, Slug: "hello"}
 	var body []byte
 	status, headers, respBody, err := fetchLocal(localTarget, req.Method, req.Path, req.Headers, body)
@@ -201,59 +162,82 @@ func TestRunTunnelServesLocalPort(t *testing.T) {
 
 	respCh := make(chan TunnelResponse, 1)
 	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		br := bufio.NewReader(conn)
-		var key string
 		for {
-			line, err := br.ReadString('\n')
+			conn, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(strings.ToLower(trimmed), "sec-websocket-key:") {
-				key = strings.TrimSpace(trimmed[len("sec-websocket-key:"):])
+			br := bufio.NewReader(conn)
+			reqLine, err := br.ReadString('\n')
+			if err != nil {
+				conn.Close()
+				continue
 			}
-			if trimmed == "" {
-				break
+			// RegisterTunnel POST /api/tunnels -> answer 200 and keep listening
+			// for the real tunnel-wss GET.
+			if strings.HasPrefix(reqLine, "POST ") {
+				for {
+					line, err := br.ReadString('\n')
+					if err != nil || strings.TrimSpace(line) == "" {
+						break
+					}
+				}
+				body := `{"slug":"hello","host":"abcde","target":"x","name":"hello","tunnelType":"HTTP"}`
+				fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
+				conn.Close()
+				continue
 			}
+			// Tunnel-wss GET -> WS handshake + one visitor request.
+			go func(c net.Conn, r *bufio.Reader) {
+				defer c.Close()
+				var key string
+				for {
+					line, err := r.ReadString('\n')
+					if err != nil {
+						return
+					}
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(strings.ToLower(trimmed), "sec-websocket-key:") {
+						key = strings.TrimSpace(trimmed[len("sec-websocket-key:"):])
+					}
+					if trimmed == "" {
+						break
+					}
+				}
+				accept := base64.StdEncoding.EncodeToString(sha1Sum(key + wsGUID))
+				fmt.Fprintf(c, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
+				// Ask the CLI for /hello like a visitor would.
+				payload := `{"type":"tunnel-request","id":"visit-1","method":"GET","path":"/","headers":{"accept":"text/html"},"bodyBase64":"","slug":"hello"}`
+				b := []byte(payload)
+				c.Write([]byte{0x81, byte(len(b))})
+				c.Write(b)
+				// Read the masked client response frame.
+				c.SetReadDeadline(time.Now().Add(10 * time.Second))
+				hdr := make([]byte, 2)
+				if _, err := io.ReadFull(r, hdr); err != nil {
+					return
+				}
+				length := int64(hdr[1] & 0x7F)
+				if length == 126 {
+					ext := make([]byte, 2)
+					io.ReadFull(r, ext)
+					length = int64(ext[0])<<8 | int64(ext[1])
+				}
+				mask := make([]byte, 4)
+				io.ReadFull(r, mask)
+				payloadBytes := make([]byte, length)
+				io.ReadFull(r, payloadBytes)
+				for i := range payloadBytes {
+					payloadBytes[i] ^= mask[i%4]
+				}
+				var tr TunnelResponse
+				if err := json.Unmarshal(payloadBytes, &tr); err != nil {
+					return
+				}
+				respCh <- tr
+				time.Sleep(500 * time.Millisecond)
+			}(conn, br)
 		}
-		accept := base64.StdEncoding.EncodeToString(sha1Sum(key + wsGUID))
-		fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
-		// Ask the CLI for /hello like a visitor would.
-		payload := `{"type":"tunnel-request","id":"visit-1","method":"GET","path":"/","headers":{"accept":"text/html"},"bodyBase64":"","slug":"hello"}`
-		b := []byte(payload)
-		conn.Write([]byte{0x81, byte(len(b))})
-		conn.Write(b)
-		// Read the masked client response frame.
-		conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-		hdr := make([]byte, 2)
-		if _, err := io.ReadFull(br, hdr); err != nil {
-			return
-		}
-		length := int64(hdr[1] & 0x7F)
-		if length == 126 {
-			ext := make([]byte, 2)
-			io.ReadFull(br, ext)
-			length = int64(ext[0])<<8 | int64(ext[1])
-		}
-		mask := make([]byte, 4)
-		io.ReadFull(br, mask)
-		payloadBytes := make([]byte, length)
-		io.ReadFull(br, payloadBytes)
-		for i := range payloadBytes {
-			payloadBytes[i] ^= mask[i%4]
-		}
-		var tr TunnelResponse
-		if err := json.Unmarshal(payloadBytes, &tr); err != nil {
-			return
-		}
-		respCh <- tr
-		// Hold open briefly so RunTunnel stays connected until ctx ends.
-		time.Sleep(500 * time.Millisecond)
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
