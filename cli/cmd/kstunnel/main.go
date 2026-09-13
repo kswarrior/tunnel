@@ -32,7 +32,7 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "                   a-z, 0-9, hyphen). Creates ONE per-tunnel WSS for data.\n")
 	fmt.Fprintf(os.Stderr, "                   Run one process per tunnel (each = one wss).\n")
 	fmt.Fprintf(os.Stderr, "                   Aliases: --slug\n")
-	fmt.Fprintf(os.Stderr, "  --target ADDR    Local URL like 127.0.0.1:4757 to expose at /<slug>.\n")
+	fmt.Fprintf(os.Stderr, "  --target ADDR    Local URL like 127.0.0.1:4757 to expose at /!tunnel=<slug>.\n")
 	fmt.Fprintf(os.Stderr, "                   Aliases: --to, --upstream, --url-target\n")
 	fmt.Fprintf(os.Stderr, "  --worker URL     Worker base URL (default %s,\n", cli.DefaultWorkerBase)
 	fmt.Fprintf(os.Stderr, "                   env KS_TUNNEL_URL overrides).\n")
@@ -180,7 +180,7 @@ func main() {
 	// Resolve host id: explicit --host wins, otherwise fresh random (never fixed).
 	hostID := fixedHost
 	if hostID == "" {
-		// --tunnel mode REQUIRES --host so /<slug> maps to the right machine.
+		// --tunnel mode REQUIRES --host so /!tunnel=<slug> maps to the right machine.
 		if serveTunnel && !configHost {
 			fmt.Fprintf(os.Stderr, "error: --tunnel needs --host ID (pick the host from the Hosts page)\n")
 			usage()

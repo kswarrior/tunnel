@@ -178,7 +178,7 @@ func RunHost(ctx context.Context, workerBase, hostID string, logf func(string, .
 				delete(active, slug)
 			}
 			delete(have, slug)
-			logf("tunnel /%s stopped (%s)", slug, source)
+			logf("tunnel /!tunnel=%s stopped (%s)", slug, source)
 		}
 		for _, spec := range toStart {
 			if !IsValidTarget(spec.Target) {
@@ -188,7 +188,7 @@ func RunHost(ctx context.Context, workerBase, hostID string, logf func(string, .
 			tctx, cancel := context.WithCancel(ctx)
 			active[spec.Slug] = cancel
 			have[spec.Slug] = spec
-			logf("tunnel /%s -> %s serving (%s)", spec.Slug, spec.Target, source)
+			logf("tunnel /!tunnel=%s -> %s serving (%s)", spec.Slug, spec.Target, source)
 			go func(sp TunnelSpec) {
 				rerr := RunTunnel(tctx, workerBase, hostID, sp.Slug, sp.Target, logf)
 				if rerr != nil && rerr != context.Canceled && tctx.Err() == nil {

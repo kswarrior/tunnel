@@ -380,7 +380,7 @@ func RunTunnel(ctx context.Context, workerBase, hostID, slug, target string, log
 			backoff = minDuration(30*time.Second, backoff*2)
 			continue
 		}
-		logf("tunnel wss connected (host %s slug /%s -> %s)", hostID, slug, target)
+		logf("tunnel wss connected (host %s slug /!tunnel=%s -> %s)", hostID, slug, target)
 		backoff = time.Second
 
 		var mu sync.Mutex
