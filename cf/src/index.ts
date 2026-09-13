@@ -4,15 +4,39 @@
  * Routes:
  *   GET /api/hello              -> { message: "KS Tunnel online", ... }
  *   GET /api/health             -> { ok: true }
- *   GET /api/hosts/:id/status   -> { host, online, agents, timestamp }
- *   WS  /api/agent/ws?host=ID   -> CLI agent socket (role=agent)
- *   WS  /api/hosts/:id/ws       -> browser watcher socket (role=watch)
+ *   GET /api/hosts/:id/status   -> { host, online, agents, decision, timestamp }
+ *   GET /api/hosts/:id/decision -> { host, decision, timestamp }
+ *   POST /api/hosts/:id/allow   -> { host, decision: "allowed", ... } (browser Allow)
+ *   POST /api/hosts/:id/deny    -> { host, decision: "denied", ... } (also /decline, /cancel)
+ *   POST /api/hosts/:id/decision {decision} -> set pending/allowed/denied
+ *   WS  /api/agent/ws?host=ID   -> CLI agent socket (role=agent, waits for decision)
+ *   WS  /api/hosts/:id/ws       -> browser watcher socket (role=watch, sends decision)
  *   WS  /api/ws?host=ID&role=.. -> generic alias for the two above
+ *   GET /api/config?host=ID     -> { host, online, agents, decision, ... }
+ *   POST /api/config?host=ID {decision} -> set decision
  *   *                           -> serves static frontend assets (dist/) with SPA fallback
+ *                                 (`/!config?host=ID` serves index.html; the React app
+ *                                 shows the Allow/Cancel page.)
  *
  * Presence is tracked by the HostPresence Durable Object (one instance per
  * host id, via idFromName("host:"+id)). Agents = CLI connections, watchers =
  * browser tabs. Online = at least one agent socket is open.
+ *
+ * Config handshake (CLI <-> browser via the DO):
+ *   1. CLI generates a 5-letter token, prints /!config?host=<token>,
+ *      then holds `WS /api/agent/ws?host=<token>` open. While no browser
+ *      has decided, the decision is "pending" (missing/404 counts as
+ *      pending = OK, keep waiting — not an error).
+ *   2. User opens the /!config link: the React app shows Allow / Cancel
+ *      and opens `WS /api/hosts/<token>/ws` (role=watch).
+ *   3. Cancel/Decline -> browser sends {"type":"decision","decision":"denied"}
+ *      (HTTP POST /api/hosts/<token>/deny as fallback). The DO broadcasts
+ *      {"type":"decision","decision":"denied"} to every socket; the CLI
+ *      sees it and stops (exits).
+ *   4. Allow -> browser sends {"type":"decision","decision":"allowed"}
+ *      (HTTP POST /api/hosts/<token>/allow as fallback). The DO broadcasts
+ *      "allowed"; the CLI stays connected (alive) and the browser saves
+ *      the host into the Hosts page (localStorage).
  */
 
 export interface Env {
@@ -49,34 +73,106 @@ function requireHost(url: URL): string | null {
 
 /** Extract `/api/hosts/<id>/...` host segment. */
 function hostFromPath(pathname: string): string | null {
-  const m = pathname.match(/^\/api\/hosts\/([^/]+)\/(status|ws)\/?$/);
+  const m = pathname.match(/^\/api\/hosts\/([^/]+)\/(status|ws|decision|allow|deny|decline|cancel)\/?$/);
   if (!m) return null;
   return isValidHost(m[1]) ? m[1] : null;
 }
 
+/** Action suffix of `/api/hosts/<id>/<action>`. */
+function actionFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/api\/hosts\/[^/]+\/(status|ws|decision|allow|deny|decline|cancel)\/?$/);
+  return m ? m[1] : null;
+}
+
 // ---------------------------------------------------------------------------
-// Durable Object: presence registry for a single host id.
+// Durable Object: presence registry + config-decision relay for one host id.
 // ---------------------------------------------------------------------------
+
+export type ConfigDecision = "pending" | "allowed" | "denied";
 
 type PresenceMessage = {
   type: "presence";
   host: string;
   online: boolean;
   agents: number;
+  decision: ConfigDecision;
   timestamp: string;
 };
+
+type DecisionMessage = {
+  type: "decision";
+  host: string;
+  decision: ConfigDecision;
+  timestamp: string;
+};
+
+function normalizeDecision(value: unknown): ConfigDecision | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim().toLowerCase();
+  if (v === "allowed" || v === "allow" || v === "approve" || v === "approved" || v === "accept") {
+    return "allowed";
+  }
+  if (
+    v === "denied" ||
+    v === "deny" ||
+    v === "decline" ||
+    v === "declined" ||
+    v === "cancel" ||
+    v === "canceled" ||
+    v === "cancelled" ||
+    v === "reject" ||
+    v === "rejected"
+  ) {
+    return "denied";
+  }
+  if (v === "pending" || v === "reset" || v === "wait" || v === "waiting") return "pending";
+  return null;
+}
+
+/** Parse an inbound WS/HTTP JSON body into a decision, if it carries one. */
+function decisionFromPayload(text: string): ConfigDecision | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    const direct = normalizeDecision(text);
+    return direct;
+  }
+  if (typeof data === "string") return normalizeDecision(data);
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    // {"type":"allow"} / {"type":"deny"} / {"type":"cancel"} / ...
+    if (typeof obj["type"] === "string") {
+      const byType = normalizeDecision(obj["type"]);
+      // "decision" type needs the nested field; other types map directly.
+      if (obj["type"] !== "decision" && byType && byType !== "pending") return byType;
+      if (obj["type"] === "reset") return "pending";
+    }
+    for (const key of ["decision", "action", "allow", "approved"]) {
+      const d = normalizeDecision(obj[key]);
+      if (d) return d;
+    }
+    // {"allow": true} / {"deny": true} / {"cancel": true}
+    if (obj["allow"] === true || obj["approved"] === true) return "allowed";
+    if (obj["deny"] === true || obj["decline"] === true || obj["cancel"] === true) return "denied";
+  }
+  return null;
+}
 
 export class HostPresence implements DurableObject {
   private ctx: DurableObjectState;
   private host: string = "unknown";
+  private decision: ConfigDecision = "pending";
 
   constructor(ctx: DurableObjectState) {
     this.ctx = ctx;
-    // Restore host label after hibernation-eviction wakeups (best effort).
+    // Restore host label + last decision after hibernation-eviction wakeups.
     ctx.blockConcurrencyWhile(async () => {
       try {
         const stored = await ctx.storage.get<string>("host");
         if (typeof stored === "string" && stored) this.host = stored;
+        const dec = await ctx.storage.get<string>("decision");
+        if (dec === "allowed" || dec === "denied" || dec === "pending") this.decision = dec;
       } catch {
         // ignore
       }
