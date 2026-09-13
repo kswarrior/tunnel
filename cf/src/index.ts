@@ -1033,8 +1033,7 @@ function tunnelNotPublishedResponse(request: Request, slug: string, pathShown?: 
   });
 }
 
-/** 502/504 when /<slug> is published but no tunnel socket serves it. */
-async function tunnelOfflineResponse(
+/** 502/504 when /<slug> is published but no tunnel socket serves it. */async function tunnelOfflineResponse(
   request: Request,
   env: Env,
   entry: TunnelEntry,
@@ -1073,6 +1072,82 @@ async function tunnelOfflineResponse(
     facts,
     cliCmd: `${cliCmd}\n# or host mode (auto-serves all tunnels):\nkstunnel --host ${entry.host}`,
     pollHost: entry.host,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Fallback Allow page: served for /!config?host=ID when the frontend assets
+// binding is unavailable. Same job as the React ConfigHost page (show agent
+// status, Allow/Cancel the host) in one self-contained file using only the
+// JSON API, so onboarding never depends on the asset deployment.
+// ---------------------------------------------------------------------------
+
+function configFallbackPage(hostRaw: string): Response {
+  const host = (hostRaw ?? "").trim();
+  const valid = isValidHost(host);
+  const html =
+    "<!doctype html>\n" +
+    '<html lang="en">\n' +
+    "<head>\n" +
+    '<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+    "<title>Allow this host? · KS Tunnel</title>\n" +
+    "<style>\n" +
+    "body{font-family:system-ui,-apple-system,sans-serif;background:#0f141b;color:#e6ebf2;margin:0;padding:32px 16px}\n" +
+    "main{max-width:560px;margin:0 auto}\n" +
+    "code{font-family:ui-monospace,monospace}\n" +
+    ".card{background:#1a2230;border:1px solid #2c3a52;border-radius:10px;padding:20px}\n" +
+    ".row{display:flex;gap:10px;margin-top:14px}\n" +
+    "button{flex:1;padding:10px;border-radius:8px;border:1px solid #2c3a52;background:#242f45;color:#e6ebf2;cursor:pointer;font-size:15px}\n" +
+    "button.primary{background:#2f6fed;border-color:#2f6fed}\n" +
+    "button:disabled{opacity:.5;cursor:default}\n" +
+    ".ok{color:#5fd68a}.err{color:#ff7a7a}.muted{color:#8b98ab}\n" +
+    "</style>\n" +
+    "</head>\n" +
+    "<body>\n" +
+    "<main>\n" +
+    "<h1>Allow this host?</h1>\n" +
+    '<div class="card">\n' +
+    `<p>Host <code>${escHtml(host || "(missing)")}</code> — <span id="st">checking…</span></p>\n` +
+    '<p id="msg" class="muted">Your CLI asked to register a new host. Allow keeps the CLI alive — Cancel stops it.</p>\n' +
+    '<div class="row"><button id="deny">Cancel</button><button id="allow" class="primary">Allow</button></div>\n' +
+    "</div>\n" +
+    "</main>\n" +
+    "<script>\n" +
+    `var HOST = ${JSON.stringify(host)};\n` +
+    `var VALID = ${valid ? "true" : "false"};\n` +
+    'var st = document.getElementById("st");\n' +
+    'var msg = document.getElementById("msg");\n' +
+    'var allowB = document.getElementById("allow");\n' +
+    'var denyB = document.getElementById("deny");\n' +
+    "function say(t, cls) { st.textContent = t; st.className = cls || \"\"; }\n" +
+    "async function poll() {\n" +
+    "  if (!VALID) { say(\"missing or invalid ?host=\", \"err\"); allowB.disabled = denyB.disabled = true; return; }\n" +
+    "  try {\n" +
+    '    var r = await fetch("/api/hosts/" + encodeURIComponent(HOST) + "/status", { cache: "no-store" });\n' +
+    "    var d = await r.json();\n" +
+    '    say((d.online ? "Agent online" : "Agent offline") + " · decision: " + d.decision, d.online ? "ok" : "err");\n' +
+    "    if (d.decision === \"allowed\") { msg.textContent = \"Allowed — this host is saved. The CLI stays connected.\"; msg.className = \"ok\"; }\n" +
+    "    else if (d.decision === \"denied\") { msg.textContent = \"Canceled — the CLI was told to stop.\"; msg.className = \"err\"; }\n" +
+    "  } catch (e) { say(\"worker unreachable\", \"err\"); }\n" +
+    "}\n" +
+    "async function send(kind) {\n" +
+    "  allowB.disabled = denyB.disabled = true;\n" +
+    "  try {\n" +
+    '    await fetch("/api/hosts/" + encodeURIComponent(HOST) + "/" + kind, { method: "POST" });\n' +
+    "    await poll();\n" +
+    "  } catch (e) { say(\"worker unreachable — retry\", \"err\"); }\n" +
+    "  allowB.disabled = denyB.disabled = false;\n" +
+    "}\n" +
+    'allowB.onclick = function () { send("allow"); };\n' +
+    'denyB.onclick = function () { send("deny"); };\n' +
+    "poll(); setInterval(poll, 5000);\n" +
+    "</script>\n" +
+    "</body>\n" +
+    "</html>\n";
+  return new Response(html, {
+    status: 200,
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 }
 
@@ -1523,6 +1598,14 @@ export default {
     // Works with wrangler.toml `[assets] directory = "./dist"`.
     if (env.ASSETS) {
       return env.ASSETS.fetch(request);
+    }
+
+    // No assets binding (partial deploy, or `vite dev` without assets).
+    // The Allow flow must survive that: serve a self-contained Allow page
+    // for /!config instead of a dead 404 — otherwise hosts can never be
+    // approved and decisions stay "pending" forever.
+    if (url.pathname === "/!config" || url.pathname.startsWith("/!config/")) {
+      return configFallbackPage(url.searchParams.get("host") ?? "");
     }
 
     // Local fallback when assets binding is unavailable (e.g. `vite dev`).

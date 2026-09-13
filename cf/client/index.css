@@ -21,8 +21,8 @@
   --primary-ring: rgba(34, 197, 94, 0.25);
 
   --danger: #dc2626;
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 5px;
+  --radius-sm: 5px;
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 150ms;
@@ -401,7 +401,7 @@ body {
   place-items: center;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 5px;
   color: var(--text-dim);
 }
 
