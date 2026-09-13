@@ -668,7 +668,11 @@ export class TunnelRegistry implements DurableObject {
         return json({ error: "invalid slug (want 2-32 chars: a-z, 0-9, hyphen, like /hello)" }, 400);
       }
       const host = typeof body["host"] === "string" ? (body["host"] as string).trim() : "";
-      if (host && !HOST_RE.test(host)) return json({ error: "invalid host" }, 400);
+      // Require a real host id: an entry with host="" can never proxy
+      // (visitor flow needs entry.host for the DO lookup) and falls through
+      // to the SPA fallback, so /<slug> confusingly shows the web UI itself
+      // instead of the port. Fail fast so the UI can surface "pick a host".
+      if (!isValidHost(host)) return json({ error: "invalid host (pick the CLI host id from Hosts)" }, 400);
       const target = typeof body["target"] === "string" ? (body["target"] as string).trim() : "";
       if (!target) return json({ error: "missing target (want like 127.0.0.1:4757)" }, 400);
       const entry: TunnelEntry = {
@@ -1070,6 +1074,26 @@ export default {
               return new Response(null, { status, headers: outHeaders });
             }
             return new Response(bodyBytes as unknown as BodyInit, { status, headers: outHeaders });
+          }
+          // Registered-slug miss: /<slug> exists as a name but nothing is
+          // published for it. Without this explicit 404 the request falls
+          // through to the SPA fallback (not_found_handling =
+          // "single-page-application") and /<slug> confusingly renders the KS
+          // web UI itself instead of the tunneled port. Only intercept
+          // extensionless tunnel-like paths so real assets (/assets/*.js,
+          // files with extensions) still serve normally.
+          const lastSeg = segs[segs.length - 1] ?? "";
+          const assetLike = segs[0] === "assets" || lastSeg.includes(".");
+          if (!assetLike) {
+            return new Response(
+              `No tunnel published at /${maybeSlug}.\n` +
+                `The Host "Connected" dot and the tunnel "Enabled" toggle alone do not expose a port.\n` +
+                `1) Tunnels card must show Live + registry: published (not just Enabled).\n` +
+                `2) Publish: re-save the tunnel in the UI, or POST /api/tunnels {"slug":"${maybeSlug}","host":"<id-from-Hosts>","target":"127.0.0.1:PORT"}.\n` +
+                `3) Serve (keep running, one process per tunnel): kstunnel --host <id-from-Hosts> --tunnel ${maybeSlug} --target 127.0.0.1:PORT\n` +
+                `Then reload /${maybeSlug} — it proxies that host's local port fullscreen via wss (cli -> workers -> you).`,
+              { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } },
+            );
           }
         }
       }
