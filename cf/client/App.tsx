@@ -148,8 +148,16 @@ export default function App(): JSX.Element {
     if (!configHost) return;
     const exists = hosts.items.some((h) => h.hostname === configHost);
     if (!exists) hosts.add(newHost(configHost, ""));
+    // Keep the ?host= URL mounted: ConfigHostPage flips to the
+    // "Allowed — CLI stays connected" state via the live decision.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configHost, hosts.items]);
+
+  const handleDenyHost = useCallback(() => {
+    // Keep the ?host= URL mounted too: the page flips to the
+    // "Canceled — CLI stopped" state via the live decision.
+    // The host is deliberately NOT added to Hosts here.
+  }, []);
 
   const statusText = status.loading
     ? "Connecting…"
