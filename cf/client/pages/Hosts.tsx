@@ -119,12 +119,13 @@ function HostCard({
             <CheckingPills />
           ) : (
             <span className="presence-row">
-              <span className="presence">
-                <span className={`dot ${agentDot}`} title={agentText} role="img" aria-label={agentText} />
+              <span className="presence" title={agentText} aria-label={agentText}>
+                <span className={`dot ${agentDot}`} aria-hidden="true" />
+                Agent
               </span>
-              <span className="presence">
-                <span className={`dot ${tunnelsDot}`} title={tunnelsText} role="img" aria-label={tunnelsText} />
-                Tunnels <span className="badge" title={tunnelsText}>{tunnelsTag}</span>
+              <span className="presence" title={tunnelsText} aria-label={tunnelsText}>
+                <span className={`dot ${tunnelsDot}`} aria-hidden="true" />
+                Tunnels <span className="badge" aria-hidden="true">{tunnelsTag}</span>
               </span>
             </span>
           )}
