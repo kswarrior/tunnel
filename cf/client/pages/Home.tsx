@@ -10,7 +10,7 @@ interface HomePageProps {
 }
 
 export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }: HomePageProps) {
-  const active = tunnels.filter((t) => t.active).length;
+  const enabled = tunnels.filter((t) => t.active).length;
 
   return (
     <div className="container">
@@ -36,8 +36,8 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
           <span className="stat-label">Total Tunnels</span>
         </button>
         <button type="button" className="stat-card" onClick={() => onGo("tunnels")}>
-          <span className="stat-num">{active}</span>
-          <span className="stat-label">Active Tunnels</span>
+          <span className="stat-num">{enabled}</span>
+          <span className="stat-label">Enabled Tunnels</span>
         </button>
         <button type="button" className="stat-card" onClick={() => onGo("hosts")}>
           <span className="stat-num">{hosts.length}</span>
@@ -56,11 +56,33 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
         ) : status.message ? (
           <p className="muted">
             {status.message} · Health: {status.healthy ? "OK" : "FAIL"}
+            {status.timestamp && (
+              <> · <span title={status.timestamp}>checked {new Date(status.timestamp).toLocaleTimeString()}</span></>
+            )}
           </p>
         ) : (
           <p className="muted">Worker unreachable.</p>
         )}
       </section>
+
+      {(tunnels.length === 0 || hosts.length === 0) && !status.loading && !status.error && (
+        <section className="card">
+          <h2>Quick start</h2>
+          <p className="muted" style={{ margin: "0 0 8px" }}>
+            1. Run <code>kstunnel --config:host</code> on the machine to expose and Allow it (Hosts).
+            2. Add a tunnel (Tunnels) pointing at that host — e.g. <code>/hello → 127.0.0.1:4757</code>.
+            3. Run the shown <code>kstunnel --host … --tunnel … --target …</code> command and open the public URL.
+          </p>
+          <div className="row" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="btn" onClick={() => onGo("hosts")}>
+              Go to Hosts
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => onGo("tunnels")}>
+              Go to Tunnels
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

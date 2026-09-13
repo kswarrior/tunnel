@@ -129,6 +129,29 @@ export default function App(): JSX.Element {
     [closeSidebar],
   );
 
+  const handleRemoveHost = useCallback(
+    (id: string) => {
+      // Unlink tunnels pointing at this host so cards don't dangle.
+      for (const t of tunnels.items) {
+        if (t.hostId === id) tunnels.update(t.id, { hostId: "" });
+      }
+      hosts.remove(id);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tunnels.items],
+  );
+
+  const handleRemoveProvider = useCallback(
+    (id: string) => {
+      for (const t of tunnels.items) {
+        if (t.providerId === id) tunnels.update(t.id, { providerId: "" });
+      }
+      providers.remove(id);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tunnels.items],
+  );
+
   const clearConfigHost = useCallback(() => {
     try {
       const url = new URL(window.location.href);
@@ -146,7 +169,8 @@ export default function App(): JSX.Element {
 
   const handleAllowHost = useCallback(() => {
     if (!configHost) return;
-    const exists = hosts.items.some((h) => h.hostname === configHost);
+    const clean = configHost.trim();
+    const exists = hosts.items.some((h) => h.hostname.trim().toLowerCase() === clean.toLowerCase());
     if (!exists) hosts.add(newHost(configHost, ""));
     // Keep the ?host= URL mounted: ConfigHostPage flips to the
     // "Allowed — CLI stays connected" state via the live decision.
@@ -178,7 +202,7 @@ export default function App(): JSX.Element {
           {configHost ? (
             <ConfigHostPage
               host={configHost}
-              alreadySaved={hosts.items.some((h) => h.hostname === configHost)}
+              alreadySaved={hosts.items.some((h) => h.hostname.trim().toLowerCase() === configHost.trim().toLowerCase())}
               onAllow={handleAllowHost}
               onDeny={handleDenyHost}
               onViewHosts={() => {
@@ -213,18 +237,25 @@ export default function App(): JSX.Element {
                 />
               )}
               {nav === "hosts" && (
-                <HostsPage hosts={hosts.items} onAdd={hosts.add} onUpdate={hosts.update} onRemove={hosts.remove} />
+                <HostsPage
+                  hosts={hosts.items}
+                  tunnels={tunnels.items}
+                  onAdd={hosts.add}
+                  onUpdate={hosts.update}
+                  onRemove={handleRemoveHost}
+                />
               )}
               {nav === "providers" && (
                 <ProvidersPage
                   providers={providers.items}
+                  tunnels={tunnels.items}
                   onAdd={providers.add}
                   onToggle={(id) => {
                     const found = providers.items.find((p) => p.id === id);
                     if (found) providers.update(id, { active: !found.active });
                   }}
                   onUpdate={providers.update}
-                  onRemove={providers.remove}
+                  onRemove={handleRemoveProvider}
                 />
               )}
               {nav === "settings" && <SettingsPage />}
