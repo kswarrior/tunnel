@@ -867,6 +867,202 @@ export class TunnelRegistry implements DurableObject {
 }
 
 // ---------------------------------------------------------------------------
+// Tunnel status pages: when /<slug> can't be proxied, browsers get a
+// self-refreshing loading page (facts + live log + auto-reload once the
+// tunnel is up) instead of a bare error string. Non-HTML clients keep the
+// plain-text errors. Every error response is no-store so it never goes
+// stale in a cache and masks the real page later.
+// ---------------------------------------------------------------------------
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function wantsHtmlPage(request: Request): boolean {
+  return (request.headers.get("accept") ?? "").includes("text/html");
+}
+
+async function presenceSnapshot(
+  env: Env,
+  host: string,
+): Promise<{ online: boolean; agents: number; tunnels: string[] } | null> {
+  try {
+    const stub = stubFor(env, host);
+    const r = await stub.fetch(`https://presence/status?host=${encodeURIComponent(host)}`);
+    if (!r.ok) return null;
+    const d = (await r.json()) as { online?: unknown; agents?: unknown; tunnels?: unknown };
+    return {
+      online: d.online === true,
+      agents: typeof d.agents === "number" ? d.agents : 0,
+      tunnels: Array.isArray(d.tunnels)
+        ? (d.tunnels as unknown[]).filter((t): t is string => typeof t === "string")
+        : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function tunnelStatusPage(opts: {
+  status: number;
+  heading: string;
+  slug: string;
+  intro: string;
+  facts: string[];
+  cliCmd: string;
+  /** Host to poll for liveness; null polls the registry until the slug is published. */
+  pollHost: string | null;
+}): Response {
+  const { status, heading, slug, intro, facts, cliCmd, pollHost } = opts;
+  const factsHtml = facts.map((f) => `<li>${escHtml(f)}</li>`).join("");
+  const seedLog = facts.map((f) => `• ${f}`).join("\n");
+  const pollJs = pollHost
+    ? 'var url = "/api/hosts/" + encodeURIComponent(HOST) + "/status";\n' +
+      "var check = async function () {\n" +
+      "  n++;\n" +
+      "  try {\n" +
+      '    var r = await fetch(url, { cache: "no-store" });\n' +
+      "    var d = await r.json();\n" +
+      "    var live = Array.isArray(d.tunnels) ? d.tunnels : [];\n" +
+      '    log("check #" + n + ": host online=" + d.online + " agents=" + d.agents + " live=[" + live.join(", ") + "]");\n' +
+      "    if (live.indexOf(SLUG) !== -1) { log(\"tunnel is live — reloading…\"); setTimeout(function () { location.reload(); }, 800); return true; }\n" +
+      "  } catch (e) { log(\"check #\" + n + \": status unreachable\"); }\n" +
+      "  return false;\n" +
+      "};"
+    : 'var url = "/api/tunnels/" + encodeURIComponent(SLUG);\n' +
+      "var check = async function () {\n" +
+      "  n++;\n" +
+      "  try {\n" +
+      '    var r = await fetch(url, { cache: "no-store" });\n' +
+      '    if (r.ok) { var d = await r.json(); log("check #" + n + ": /" + SLUG + " is published (host " + d.host + ") — reloading…"); setTimeout(function () { location.reload(); }, 800); return true; }\n' +
+      '    log("check #" + n + ": still not published (HTTP " + r.status + ")");\n' +
+      "  } catch (e) { log(\"check #\" + n + \": registry unreachable\"); }\n" +
+      "  return false;\n" +
+      "};";
+  const html =
+    "<!doctype html>\n" +
+    '<html lang="en">\n' +
+    "<head>\n" +
+    '<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+    `<title>/${escHtml(slug)} — ${escHtml(heading)} · KS Tunnel</title>\n` +
+    "<style>\n" +
+    "body{font-family:system-ui,-apple-system,sans-serif;background:#0f141b;color:#e6ebf2;margin:0;padding:32px 16px}\n" +
+    "main{max-width:640px;margin:0 auto}\n" +
+    ".kicker{color:#8b98ab;font-size:13px}\n" +
+    "code,.cmd{font-family:ui-monospace,monospace}\n" +
+    ".cmd{background:#1a2230;border:1px solid #2c3a52;border-radius:8px;padding:12px;white-space:pre-wrap}\n" +
+    "ul{background:#1a2230;border:1px solid #2c3a52;border-radius:8px;padding:12px 12px 12px 32px}\n" +
+    "#log{background:#0a0e14;border:1px solid #2c3a52;border-radius:8px;padding:12px;height:220px;overflow-y:auto;white-space:pre-wrap;font-size:12px}\n" +
+    ".spin{display:inline-block;width:14px;height:14px;border:2px solid #2c3a52;border-top-color:#4da3ff;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}\n" +
+    "@keyframes sp{to{transform:rotate(360deg)}}\n" +
+    ".muted{color:#8b98ab}\n" +
+    "</style>\n" +
+    "</head>\n" +
+    "<body>\n" +
+    "<main>\n" +
+    `<p class="kicker">KS Tunnel · <code>/${escHtml(slug)}</code></p>\n` +
+    `<h1><span class="spin"></span>${escHtml(heading)}</h1>\n` +
+    `<p>${escHtml(intro)}</p>\n` +
+    `<ul>${factsHtml}</ul>\n` +
+    "<p>Run on the host machine and keep it running:</p>\n" +
+    `<pre class="cmd">${escHtml(cliCmd)}</pre>\n` +
+    '<p class="muted">Waiting for the tunnel — this page reloads itself when it is live. Live log:</p>\n' +
+    '<pre id="log"></pre>\n' +
+    "</main>\n" +
+    "<script>\n" +
+    `var SLUG = ${JSON.stringify(slug)};\n` +
+    `var HOST = ${JSON.stringify(pollHost ?? "")};\n` +
+    "var n = 0;\n" +
+    'var el = document.getElementById("log");\n' +
+    `el.textContent = ${JSON.stringify(seedLog)} + "\\n";\n` +
+    "function log(s) { var t = new Date().toLocaleTimeString(); el.textContent += \"[\" + t + \"] \" + s + \"\\n\"; el.scrollTop = el.scrollHeight; }\n" +
+    `${pollJs}\n` +
+    "(async function () {\n" +
+    '  log("waiting for tunnel…");\n' +
+    "  for (var i = 0; i < 240; i++) { if (await check()) return; await new Promise(function (r) { setTimeout(r, 2500); }); }\n" +
+    '  log("stopped auto-checks — press Ctrl+Shift+R to retry manually.");\n' +
+    "})();\n" +
+    "</script>\n" +
+    "</body>\n" +
+    "</html>\n";
+  return new Response(html, {
+    status,
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
+/** 404 when /<slug> has nothing published: text for machines, log page for browsers. */
+function tunnelNotPublishedResponse(request: Request, slug: string): Response {
+  const text =
+    `No tunnel published at /${slug}.\n` +
+    `The Host "Connected" dot and the tunnel "Enabled" toggle alone do not expose a port.\n` +
+    `1) Tunnels card must show Live + registry: published (not just Enabled).\n` +
+    `2) Publish: re-save the tunnel in the UI, or POST /api/tunnels {"slug":"${slug}","host":"<id-from-Hosts>","target":"127.0.0.1:PORT"}.\n` +
+    `3) Serve: kstunnel --host <id-from-Hosts> (host mode, auto-serves) or kstunnel --host <id> --tunnel ${slug} --target 127.0.0.1:PORT (keep running).\n` +
+    `Then reload /${slug} — it proxies that host's local port fullscreen via wss (cli -> workers -> you).`;
+  if (!wantsHtmlPage(request)) {
+    return new Response(text, {
+      status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+  return tunnelStatusPage({
+    status: 404,
+    heading: "No tunnel published here yet",
+    slug,
+    intro: "Nothing is published at this path, so there is nothing to show yet. This page keeps checking and reloads itself once the tunnel is published and live.",
+    facts: [
+      `slug /${slug} is not in the worker registry`,
+      "the Host Connected dot and the tunnel Enabled toggle alone do not expose a port",
+      "publish: re-save the tunnel in the web UI (Tunnels must show registry: published)",
+    ],
+    cliCmd: `kstunnel --host <id-from-Hosts>   # host mode: auto-serves every published tunnel\n# or one tunnel: kstunnel --host <id> --tunnel ${slug} --target 127.0.0.1:PORT`,
+    pollHost: null,
+  });
+}
+
+/** 502/504 when /<slug> is published but no tunnel socket serves it. */
+async function tunnelOfflineResponse(
+  request: Request,
+  env: Env,
+  entry: TunnelEntry,
+  errText: string,
+  code: number,
+): Promise<Response> {
+  const presence = await presenceSnapshot(env, entry.host);
+  const live = presence?.tunnels ?? [];
+  const cliCmd = `kstunnel --host ${entry.host} --tunnel ${entry.slug} --target ${entry.target}`;
+  const facts = [
+    `slug /${entry.slug} → target ${entry.target} (host ${entry.host})`,
+    presence
+      ? `host ${entry.host}: online=${presence.online} agents=${presence.agents} live tunnels=[${live.join(", ") || "none"}]`
+      : `host ${entry.host}: presence unreachable`,
+    `last error: ${errText}`,
+  ];
+  const text =
+    `${errText} (slug /${entry.slug})\n` +
+    `host ${entry.host}: ${presence ? `online=${presence.online} agents=${presence.agents} live=[${live.join(", ") || "none"}]` : "presence unreachable"}\n` +
+    `Is the CLI running? run: ${cliCmd}\n` +
+    `or host mode (auto-serves all tunnels): kstunnel --host ${entry.host}`;
+  if (!wantsHtmlPage(request)) {
+    return new Response(text, {
+      status: code,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+  return tunnelStatusPage({
+    status: code,
+    heading: "Tunnel offline — waiting…",
+    slug: entry.slug,
+    intro: "The tunnel is published, but no live tunnel socket is serving it right now. This page keeps checking the host and reloads itself once the tunnel is live.",
+    facts,
+    cliCmd: `${cliCmd}\n# or host mode (auto-serves all tunnels):\nkstunnel --host ${entry.host}`,
+    pollHost: entry.host,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Worker entrypoint
 // ---------------------------------------------------------------------------
 
@@ -1215,9 +1411,12 @@ export default {
                 },
               );
             } catch {
-              return new Response(
-                `Tunnel error — could not reach host ${entry.host}. Is the CLI running?\nrun: kstunnel --host ${entry.host} --tunnel ${entry.slug} --target ${entry.target}`,
-                { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } },
+              return tunnelOfflineResponse(
+                request,
+                env,
+                entry,
+                `Tunnel error — could not reach host ${entry.host}. Is the CLI running?`,
+                502,
               );
             }
             if (!bridge.ok) {
@@ -1226,13 +1425,10 @@ export default {
                 typeof errData?.["hint"] === "string"
                   ? (errData["hint"] as string)
                   : typeof errData?.["error"] === "string"
-                    ? `${errData["error"]} (slug /${entry.slug})`
-                    : `Tunnel unavailable (slug /${entry.slug}).`;
+                    ? (errData["error"] as string)
+                    : "Tunnel unavailable";
               const code = bridge.status === 504 ? 504 : 502;
-              return new Response(
-                `${msg}\nIs the CLI running? run: kstunnel --host ${entry.host} --tunnel ${entry.slug} --target ${entry.target}`,
-                { status: code, headers: { "content-type": "text/plain; charset=utf-8" } },
-              );
+              return tunnelOfflineResponse(request, env, entry, msg, code);
             }
             const payload = (await bridge.json().catch(() => null)) as {
               status?: number;
@@ -1269,15 +1465,7 @@ export default {
           const lastSeg = segs[segs.length - 1] ?? "";
           const assetLike = segs[0] === "assets" || lastSeg.includes(".");
           if (!assetLike) {
-            return new Response(
-              `No tunnel published at /${maybeSlug}.\n` +
-                `The Host "Connected" dot and the tunnel "Enabled" toggle alone do not expose a port.\n` +
-                `1) Tunnels card must show Live + registry: published (not just Enabled).\n` +
-                `2) Publish: re-save the tunnel in the UI, or POST /api/tunnels {"slug":"${maybeSlug}","host":"<id-from-Hosts>","target":"127.0.0.1:PORT"}.\n` +
-                `3) Serve (keep running, one process per tunnel): kstunnel --host <id-from-Hosts> --tunnel ${maybeSlug} --target 127.0.0.1:PORT\n` +
-                `Then reload /${maybeSlug} — it proxies that host's local port fullscreen via wss (cli -> workers -> you).`,
-              { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } },
-            );
+            return tunnelNotPublishedResponse(request, maybeSlug);
           }
         }
       }
