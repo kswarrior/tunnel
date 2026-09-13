@@ -69,6 +69,8 @@ func IsValidSlug(s string) bool {
 }
 
 // IsValidTarget reports whether s looks like host:port (e.g. 127.0.0.1:4757).
+// The port must be numeric and in range 1-65535 (port 0 can never serve, and
+// would publish a bogus registry entry whose /<slug> can't show the port).
 func IsValidTarget(s string) bool {
 	s = strings.TrimSpace(s)
 	if i := strings.Index(s, "://"); i >= 0 {
@@ -92,7 +94,14 @@ func IsValidTarget(s string) bool {
 			return false
 		}
 	}
-	return true
+	if len(port) > 5 {
+		return false
+	}
+	n := 0
+	for _, c := range port {
+		n = n*10 + int(c-'0')
+	}
+	return n >= 1 && n <= 65535
 }
 
 // NormalizeTarget strips scheme/path, returning host:port.

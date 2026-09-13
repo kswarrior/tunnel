@@ -845,23 +845,27 @@ export default {
       }
       // Make sure visitors can resolve /<slug> even if the browser form
       // never POSTed: upsert the mapping from the CLI's own query params.
+      // Only touch the registry when the CLI sent a target — storing a bogus
+      // "127.0.0.1:0" placeholder would make /<slug> hints lie about the port.
       if (env.TUNNEL_REGISTRY) {
         try {
           const target = (url.searchParams.get("target") || "").trim();
-          const reg = registryStub(env);
-          await reg.fetch(
-            new Request("https://registry/register", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                slug,
-                host,
-                target: target || "127.0.0.1:0",
-                name: slug,
-                tunnelType: "HTTP",
+          if (target) {
+            const reg = registryStub(env);
+            await reg.fetch(
+              new Request("https://registry/register", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  slug,
+                  host,
+                  target,
+                  name: slug,
+                  tunnelType: "HTTP",
+                }),
               }),
-            }),
-          );
+            );
+          }
         } catch {
           // registry touch is best-effort; the socket itself still works
         }

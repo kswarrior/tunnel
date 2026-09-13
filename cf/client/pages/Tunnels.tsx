@@ -49,6 +49,9 @@ function providerName(providers: Provider[], providerId: string): string {
 /** Publish slug -> host mapping so visitors hitting /<slug> can be proxied. */
 async function publishTunnel(t: Tunnel, hosts: Host[]): Promise<void> {
   const host = hostToken(hosts, t.hostId);
+  if (!isConfigHostId(host)) {
+    throw new Error("pick the CLI host from Hosts first — without a host, /" + t.slug + " can never resolve");
+  }
   const res = await fetch("/api/tunnels", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -114,7 +117,7 @@ function TunnelCard({
   const statusBadge = tunnelLive ? (
     <span className="badge badge-on">Live</span>
   ) : tunnel.active ? (
-    <span className="badge">Enabled</span>
+    <span className="badge">Enabled (local only — not serving)</span>
   ) : (
     <span className="badge">Stopped</span>
   );
@@ -160,6 +163,17 @@ function TunnelCard({
             <code>{cliCmd}</code>
             {copied && " — copied!"}
           </span>
+          {tunnel.active && !tunnelLive && (
+            <span className="error" style={{ display: "block", marginTop: 4 }}>
+              Enabled locally, but the CLI tunnel wss is not connected — /{tunnel.slug} will not show {tunnel.target}.
+              Run the command above on the host machine and keep it running.
+            </span>
+          )}
+          {tunnelLive && !published && (
+            <span className="error" style={{ display: "block", marginTop: 4 }}>
+              Tunnel wss is connected, but /{tunnel.slug} is not published for this host — re-save to publish.
+            </span>
+          )}
         </span>
       }
       actions={[
@@ -364,6 +378,25 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     closeEdit();
   };
 
+  // Enabling is local-only — it never starts serving by itself. Re-publish on
+  // enable so a previously failed publish (worker offline, host picked later)
+  // heals: /<slug> then gives a clear 502 "tunnel offline, run CLI…" instead
+  // of falling back to the web UI itself.
+  const handleToggle = (t: Tunnel) => {
+    const turningOn = !t.active;
+    onToggle(t.id);
+    if (!turningOn) return;
+    const updated = { ...t, active: true };
+    publishTunnel(updated, hosts)
+      .then(() => {
+        setPageNotice(`Enabled and published — /${t.slug} resolves. Keep the CLI running: kstunnel --host <id> --tunnel ${t.slug} --target ${t.target}.`);
+        registry.refresh();
+      })
+      .catch((e: unknown) => {
+        setPageNotice(`Enabled locally, but publishing failed (${e instanceof Error ? e.message : "worker unreachable"}) — /${t.slug} won't resolve until you re-save with the worker online.`);
+      });
+  };
+
   return (
     <div className="container">
       <div className="page-head">
@@ -401,7 +434,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
               hosts={hosts}
               providers={providers}
               registryEntry={registryBySlug.get(normalizeSlug(t.slug))}
-              onToggle={() => onToggle(t.id)}
+              onToggle={() => handleToggle(t)}
               onEdit={() => openEdit(t)}
               onDelete={() => setPendingDelete(t)}
             />
