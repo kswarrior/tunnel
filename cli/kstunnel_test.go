@@ -49,8 +49,13 @@ func TestGenerateHostID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GenerateHostID() error: %v", err)
 		}
-		if len(id) != 16 {
-			t.Fatalf("GenerateHostID() = %q, want 16 chars", id)
+		if len(id) != 5 {
+			t.Fatalf("GenerateHostID() = %q, want 5 chars", id)
+		}
+		for _, c := range id {
+			if c < 'a' || c > 'z' {
+				t.Fatalf("GenerateHostID() = %q, want 5 lowercase letters [a-z]", id)
+			}
 		}
 		if !IsValidHostID(id) {
 			t.Fatalf("GenerateHostID() = %q, not a valid host id", id)
@@ -63,12 +68,12 @@ func TestGenerateHostID(t *testing.T) {
 }
 
 func TestIsValidHostID(t *testing.T) {
-	for _, ok := range []string{"abc123", "aB3-x_yZ09", strings.Repeat("a", 64)} {
+	for _, ok := range []string{"abcde", "abc123", "aB3-x_yZ09", strings.Repeat("a", 64)} {
 		if !IsValidHostID(ok) {
 			t.Fatalf("IsValidHostID(%q) = false, want true", ok)
 		}
 	}
-	for _, bad := range []string{"", "ab", "has space", "semi;colon", "slash/a", strings.Repeat("a", 65)} {
+	for _, bad := range []string{"", "ab", "abcd", "has space", "semi;colon", "slash/a", strings.Repeat("a", 65)} {
 		if IsValidHostID(bad) {
 			t.Fatalf("IsValidHostID(%q) = true, want false", bad)
 		}
