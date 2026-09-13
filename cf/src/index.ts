@@ -807,6 +807,19 @@ export default {
           agents: (data?.["agents"] as number) ?? 0,
           decision: (data?.["decision"] as string) ?? "pending",
           timestamp: (data?.["timestamp"] as string) ?? new Date().toISOString(),
+          tunnels: (data?.["tunnels"] as string[]) ?? [],
+        });
+      }
+      if (action === "tunnels") {
+        // GET /api/hosts/:id/tunnels -> live per-tunnel wss slugs for this host
+        const res = await stub.fetch(`https://presence/tunnels?host=${encodeURIComponent(host)}`);
+        const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+        return json({
+          host,
+          tunnels: (data?.["tunnels"] as string[]) ?? [],
+          online: (data?.["online"] as boolean) ?? false,
+          agents: (data?.["agents"] as number) ?? 0,
+          timestamp: (data?.["timestamp"] as string) ?? new Date().toISOString(),
         });
       }
       return json({ error: "not found" }, 404);
@@ -937,6 +950,129 @@ export default {
         decision: (data?.["decision"] as string) ?? "pending",
         timestamp: (data?.["timestamp"] as string) ?? new Date().toISOString(),
       });
+    }
+
+    // --- Public tunnel proxy: /<slug> shows the host's local port --------
+    // FULLSCREEN: returns the upstream bytes verbatim (status+headers+body),
+    // no KS Tunnel chrome — only the wss of that port (cli -> workers -> you).
+    // e.g. tunnel { slug:"hello", target:"127.0.0.1:4757" } => GET /hello
+    // proxies http://127.0.0.1:4757/ through the per-tunnel wss.
+    if (
+      env.TUNNEL_REGISTRY &&
+      env.HOST_PRESENCE &&
+      !url.pathname.startsWith("/api/") &&
+      url.pathname !== "/!config" &&
+      !url.pathname.startsWith("/!config/") &&
+      url.pathname !== "/"
+    ) {
+      const segs = url.pathname.split("/").filter(Boolean);
+      if (segs.length >= 1) {
+        const maybeSlug = normalizeSlug(segs[0]);
+        // Skip vite/dev + well-known + file-like paths unless registered.
+        if (isValidSlug(maybeSlug)) {
+          let entry: TunnelEntry | null = null;
+          try {
+            const reg = registryStub(env);
+            const r = await reg.fetch(`https://registry/resolve?slug=${encodeURIComponent(maybeSlug)}`);
+            if (r.ok) entry = (await r.json()) as TunnelEntry;
+          } catch {
+            entry = null;
+          }
+          if (entry && entry.host) {
+            const rest = segs.length > 1 ? "/" + segs.slice(1).join("/") : "/";
+            const targetPath = rest + url.search;
+            // Read visitor body (if any) for POST/PUT/etc.
+            let bodyBase64 = "";
+            if (request.method !== "GET" && request.method !== "HEAD") {
+              try {
+                const buf = await request.arrayBuffer();
+                if (buf.byteLength > 0) {
+                  if (buf.byteLength > 10 * 1024 * 1024) {
+                    return new Response("Request body too large (max 10MB).", { status: 413 });
+                  }
+                  bodyBase64 = uint8ToBase64(new Uint8Array(buf));
+                }
+              } catch {
+                bodyBase64 = "";
+              }
+            }
+            const fwdHeaders: Record<string, string> = {};
+            try {
+              request.headers.forEach((v, k) => {
+                const lk = k.toLowerCase();
+                if (lk === "host" || lk === "content-length" || lk === "connection" || lk === "transfer-encoding") return;
+                if (lk.startsWith("cf-")) return;
+                if (lk === "x-forwarded-for" || lk === "x-forwarded-proto" || lk === "x-real-ip") return;
+                fwdHeaders[k] = v;
+              });
+            } catch {
+              // ignore header copy errors
+            }
+            const reqId = crypto.randomUUID();
+            let bridge: Response;
+            try {
+              const stub = stubFor(env, entry.host);
+              bridge = await stub.fetch(
+                `https://presence/tunnel/request?slug=${encodeURIComponent(entry.slug)}`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    id: reqId,
+                    method: request.method,
+                    path: targetPath,
+                    headers: fwdHeaders,
+                    bodyBase64,
+                  }),
+                },
+              );
+            } catch {
+              return new Response(
+                `Tunnel error — could not reach host ${entry.host}. Is the CLI running?\nrun: kstunnel --host ${entry.host} --tunnel ${entry.slug} --target ${entry.target}`,
+                { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } },
+              );
+            }
+            if (!bridge.ok) {
+              const errData = (await bridge.json().catch(() => null)) as Record<string, unknown> | null;
+              const msg =
+                typeof errData?.["hint"] === "string"
+                  ? (errData["hint"] as string)
+                  : typeof errData?.["error"] === "string"
+                    ? `${errData["error"]} (slug /${entry.slug})`
+                    : `Tunnel unavailable (slug /${entry.slug}).`;
+              const code = bridge.status === 504 ? 504 : 502;
+              return new Response(
+                `${msg}\nIs the CLI running? run: kstunnel --host ${entry.host} --tunnel ${entry.slug} --target ${entry.target}`,
+                { status: code, headers: { "content-type": "text/plain; charset=utf-8" } },
+              );
+            }
+            const payload = (await bridge.json().catch(() => null)) as {
+              status?: number;
+              headers?: Record<string, string>;
+              bodyBase64?: string;
+            } | null;
+            if (!payload) return new Response("Tunnel error — bad gateway.", { status: 502 });
+            const outHeaders = new Headers();
+            for (const [k, v] of Object.entries(payload.headers ?? {})) {
+              const lk = k.toLowerCase();
+              if (lk === "content-length" || lk === "transfer-encoding" || lk === "connection") continue;
+              try {
+                outHeaders.set(k, String(v));
+              } catch {
+                // skip bad header
+              }
+            }
+            // No KS wrapper headers — fullscreen upstream bytes only.
+            outHeaders.delete("x-powered-by");
+            const bodyBytes = payload.bodyBase64 ? base64ToUint8(payload.bodyBase64) : new Uint8Array(0);
+            const status = typeof payload.status === "number" ? payload.status : 200;
+            if (request.method === "HEAD" || status === 204 || status === 304) {
+              return new Response(null, { status, headers: outHeaders });
+            }
+            return new Response(bodyBytes as unknown as BodyInit, { status, headers: outHeaders });
+          }
+        }
+      }
     }
 
     // Serve frontend static assets built by Vite into ./dist.

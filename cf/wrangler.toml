@@ -17,8 +17,15 @@ directory = "./dist"
 not_found_handling = "single-page-application"
 
 [durable_objects]
-bindings = [{ name = "HOST_PRESENCE", class_name = "HostPresence" }]
+bindings = [
+  { name = "HOST_PRESENCE", class_name = "HostPresence" },
+  { name = "TUNNEL_REGISTRY", class_name = "TunnelRegistry" },
+]
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["HostPresence"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["TunnelRegistry"]
