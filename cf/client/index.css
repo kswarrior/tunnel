@@ -311,6 +311,37 @@ body {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.entity-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.entity-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.presence-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .entity-label {
