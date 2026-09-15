@@ -58,11 +58,27 @@
  *     cli -> workers : {"type":"tunnel-response","id","status","headers","bodyBase64"}
  */
 
+import {
+  RATE_IP_LIMIT,
+  RATE_IP_WINDOW_MS,
+  RATE_MISS_LIMIT,
+  RATE_MISS_WINDOW_MS,
+  TOKEN_RE,
+  checkLimit,
+  clientIp,
+  rateLimited,
+  validToken as validTokenQ,
+} from "./limit.js";
+
 export interface Env {
   ASSETS: Fetcher;
   HOST_PRESENCE: DurableObjectNamespace;
   TUNNEL_REGISTRY: DurableObjectNamespace;
 }
+
+// Per-isolate fixed windows like ks-ssh-v2 (IP-wide + per-IP token-miss).
+const ipHits: Map<string, { n: number; reset: number }> = new Map();
+const tokenMiss: Map<string, { n: number; reset: number }> = new Map();
 
 const HOST_RE = /^[A-Za-z0-9_-]{5,64}$/;
 const SLUG_RE = /^[a-z0-9-]{2,32}$/;
@@ -90,14 +106,45 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
+/** Canonical host key for DO idFromName — lowercases like ks-ssh-v2 uppercases tokens. */
+function canonicalHost(host: string): string {
+  return host.trim();
+}
+
 function stubFor(env: Env, host: string): DurableObjectStub {
-  const id = env.HOST_PRESENCE.idFromName(`host:${host}`);
+  const id = env.HOST_PRESENCE.idFromName(`host:${canonicalHost(host)}`);
   return env.HOST_PRESENCE.get(id);
 }
 
 function registryStub(env: Env): DurableObjectStub {
   const id = env.TUNNEL_REGISTRY.idFromName("tunnels:registry");
   return env.TUNNEL_REGISTRY.get(id);
+}
+
+function validToken(url: URL): string | null {
+  // ks-ssh-v2 compat: ?token= is alias for ?host=, checked in that order.
+  const raw = url.searchParams.get("token") ?? url.searchParams.get("host");
+  const t = validTokenQ(raw);
+  if (t) return t;
+  // Fallback to raw host validation (lowercase 5-char ids).
+  const host = raw?.trim() ?? "";
+  return isValidHost(host) ? host : null;
+}
+
+function requireHost(url: URL): string | null {
+  // Accept both ?host= (tunnel) and ?token= (ks-ssh-v2) for interop.
+  const raw = url.searchParams.get("host") ?? url.searchParams.get("token");
+  if (!raw) return null;
+  const tok = validTokenQ(raw);
+  if (tok) return raw.trim(); // preserve original casing for logging, DO uses canonical
+  return isValidHost(raw) ? raw.trim() : null;
+}
+
+function pathToken(pathname: string, prefix: string): string | null {
+  if (!pathname.startsWith(prefix)) return null;
+  const rest = pathname.slice(prefix.length).split("/")[0] ?? "";
+  const t = rest.trim().toUpperCase();
+  return TOKEN_RE.test(t) ? t : null;
 }
 
 /**
@@ -108,14 +155,17 @@ function registryStub(env: Env): DurableObjectStub {
  * create/edit/delete tunnels in the web UI.
  */
 async function pushTunnelSpec(env: Env, host: string): Promise<void> {
-  if (!isValidHost(host)) return;
+  const canon = canonicalHost(host);
+  if (!isValidHost(canon) && !validTokenQ(canon)) return;
   try {
     const reg = registryStub(env);
     const r = await reg.fetch("https://registry/list");
     if (!r.ok) return;
     const data = (await r.json()) as { tunnels?: TunnelEntry[] };
+    // Host compare is case-insensitive (tunnel uses lower, ssh uses upper).
+    const want = canon.toLowerCase();
     const tunnels = (Array.isArray(data.tunnels) ? data.tunnels : [])
-      .filter((e) => e && e.host === host && isValidSlug(normalizeSlug(e.slug)))
+      .filter((e) => e && e.host && e.host.trim().toLowerCase() === want && isValidSlug(normalizeSlug(e.slug)))
       .map((e) => ({ slug: normalizeSlug(e.slug), target: (e.target ?? "").trim() }))
       .filter((e) => !!e.target);
     const stub = stubFor(env, host);
