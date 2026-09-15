@@ -222,8 +222,16 @@ func ParseDecisionMessage(msg string) (Decision, bool) {
 }
 
 // AgentWSURL builds the WSS endpoint the CLI holds open for presence:
-// wss://<worker>/api/agent/ws?host=<random>
+// wss://<worker>/api/agent/ws?host=<random>  (also ?token= for ssh compat)
+// For 9-char token style ids we send both ?host= and ?token= so either
+// worker naming (tunnel ?host= vs ssh ?token=) pairs in the same DO.
 func AgentWSURL(workerBase, hostID string) (string, error) {
+	return AgentWSURLWithToken(workerBase, hostID)
+}
+
+// AgentWSURLWithToken is the ks-ssh-v2 compatible form that always sends
+// both host and token query keys (one is alias of the other on the worker).
+func AgentWSURLWithToken(workerBase, hostID string) (string, error) {
 	base := strings.TrimSpace(workerBase)
 	if base == "" {
 		base = DefaultWorkerBase
@@ -246,7 +254,42 @@ func AgentWSURL(workerBase, hostID string) (string, error) {
 		u.Scheme = "wss"
 	}
 	u.Path = "/api/agent/ws"
-	u.RawQuery = url.Values{"host": []string{hostID}}.Encode()
+	// Send both keys for maximal compat (tunnel worker checks host or token).
+	q := url.Values{"host": []string{hostID}}
+	if ValidToken(hostID) {
+		q.Set("token", hostID)
+	}
+	u.RawQuery = q.Encode()
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+// ClientWSURL is the browser/watcher WS alias (ssh's /v1/client?token=...).
+// The CLI never needs it, but it is exposed for symmetry / tests.
+func ClientWSURL(workerBase, token string) (string, error) {
+	base := strings.TrimSpace(workerBase)
+	if base == "" {
+		base = DefaultWorkerBase
+	}
+	if !strings.Contains(base, "://") {
+		base = "https://" + base
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	switch u.Scheme {
+	case "https":
+		u.Scheme = "wss"
+	case "http":
+		u.Scheme = "ws"
+	case "wss", "ws":
+		// keep
+	default:
+		u.Scheme = "wss"
+	}
+	u.Path = "/v1/client"
+	u.RawQuery = url.Values{"token": []string{token}}.Encode()
 	u.Fragment = ""
 	return u.String(), nil
 }

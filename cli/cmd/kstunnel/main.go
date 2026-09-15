@@ -14,14 +14,15 @@ import (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [--help] [--version] [--config:host] [--host ID [--tunnel SLUG --target HOST:PORT]] [--worker URL]\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s [--help] [--version] [--config:host] [--host ID [--tunnel SLUG --target HOST:PORT]] [--token TOKEN] [--worker URL]\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "  --config:host    Generate a random host token, print the\n")
 	fmt.Fprintf(os.Stderr, "                   https://<worker>/!config?host=<random> Allow URL,\n")
 	fmt.Fprintf(os.Stderr, "                   then hold the MAIN WSS presence connection open\n")
 	fmt.Fprintf(os.Stderr, "                   (green dot on the web UI while connected).\n")
 	fmt.Fprintf(os.Stderr, "                   Aliases: --config-host, --config_host, --config.host\n")
-	fmt.Fprintf(os.Stderr, "  --host ID        Host id (the CLI token). With --config:host it reuses\n")
+	fmt.Fprintf(os.Stderr, "  --host ID        Host id (the CLI token). Alias --token (ks-ssh-v2 compat).\n")
+	fmt.Fprintf(os.Stderr, "                   With --config:host it reuses\n")
 	fmt.Fprintf(os.Stderr, "                   the id instead of generating a random one. With --tunnel\n")
 	fmt.Fprintf(os.Stderr, "                   it selects which host serves the tunnel.\n")
 	fmt.Fprintf(os.Stderr, "                   Alone (no --tunnel) it runs HOST MODE: hold the main\n")
@@ -98,6 +99,44 @@ func main() {
 		if arg == "--host" && i+1 < len(args) {
 			i++
 			fixedHost = strings.TrimSpace(args[i])
+			continue
+		}
+		// ks-ssh-v2 compat: --token and --token=... alias --host
+		if strings.HasPrefix(arg, "--token=") {
+			fixedHost = strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(arg, "--token=")))
+			if fixedHost == "" {
+				// --token= (empty) means generate fresh 9-char token like ssh
+				if id, err := cli.GenerateToken(); err == nil {
+					fixedHost = id
+				}
+			}
+			continue
+		}
+		if arg == "--token" {
+			// --token with optional value (mirrors clap num_args 0..=1)
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+				fixedHost = strings.ToUpper(strings.TrimSpace(args[i]))
+				if fixedHost == "" {
+					if id, err := cli.GenerateToken(); err == nil {
+						fixedHost = id
+					}
+				}
+			} else {
+				if id, err := cli.GenerateToken(); err == nil {
+					fixedHost = id
+				}
+			}
+			continue
+		}
+		if arg == "--relay" && i+1 < len(args) {
+			// ssh compat: --relay URL alias --worker
+			i++
+			workerBase = strings.TrimRight(args[i], "/")
+			continue
+		}
+		if strings.HasPrefix(arg, "--relay=") {
+			workerBase = strings.TrimRight(strings.TrimPrefix(arg, "--relay="), "/")
 			continue
 		}
 		if strings.HasPrefix(arg, "--tunnel=") {

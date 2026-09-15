@@ -130,6 +130,7 @@ func TunnelWSURL(workerBase, hostID, slug string) (string, error) {
 
 // TunnelWSURLWithTarget includes &target= so the Worker can auto-register
 // /<slug> even if the browser form never POSTed.
+// For 9-char token ids we also set ?token= alias like AgentWSURL (ssh compat).
 func TunnelWSURLWithTarget(workerBase, hostID, slug, target string) (string, error) {
 	base := strings.TrimSpace(workerBase)
 	if base == "" {
@@ -153,6 +154,9 @@ func TunnelWSURLWithTarget(workerBase, hostID, slug, target string) (string, err
 	}
 	u.Path = "/api/tunnels/ws"
 	q := url.Values{"host": []string{hostID}, "slug": []string{NormalizeSlug(slug)}}
+	if ValidToken(hostID) {
+		q.Set("token", hostID)
+	}
 	if strings.TrimSpace(target) != "" {
 		q.Set("target", NormalizeTarget(target))
 	}
