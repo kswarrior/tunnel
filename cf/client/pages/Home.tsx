@@ -16,10 +16,18 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
     <div className="container">
       <div className="page-head">
         <div>
-          <h1>KS Tunnel</h1>
-          <p className="muted">Expose local services through Cloudflare Workers.</p>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#0f9d58", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.14)", padding: "3px 8px", borderRadius: 999 }}>White · Green · Glass</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#8ea0b8" }}>Cloudflare Workers</span>
+          </div>
+          <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            KS Tunnel
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: status.error ? "#ef4444" : status.loading ? "#f59e0b" : "#10b981", boxShadow: status.error ? "0 0 0 5px rgba(239,68,68,0.14)" : "0 0 0 5px rgba(16,185,129,0.16)", flex: "0 0 8px" }} />
+          </h1>
+          <p className="muted">Expose local services through Cloudflare Workers — frosted glass, instant edge proxy.</p>
         </div>
-        <button type="button" className="btn" onClick={onRefresh} disabled={status.loading}>
+        <button type="button" className="btn" onClick={onRefresh} disabled={status.loading} style={{ alignSelf: "center" }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
           {status.loading ? "Checking…" : "Refresh"}
         </button>
       </div>
@@ -32,40 +40,67 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
 
       <div className="stats">
         <button type="button" className="stat-card" onClick={() => onGo("tunnels")}>
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span className="stat-label">Total Tunnels</span>
+            <span style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.14)", display: "grid", placeItems: "center", color: "#0f9d58" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+            </span>
+          </span>
           <span className="stat-num">{tunnels.length}</span>
-          <span className="stat-label">Total Tunnels</span>
+          <span className="stat-sub">{tunnels.length === 0 ? "No tunnels yet" : `${enabled} enabled · tap to manage`}</span>
         </button>
         <button type="button" className="stat-card" onClick={() => onGo("tunnels")}>
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span className="stat-label">Enabled</span>
+            <span style={{ width: 36, height: 36, borderRadius: 10, background: enabled ? "linear-gradient(135deg, rgba(16,185,129,0.14), rgba(52,211,153,0.18))" : "rgba(15,23,42,0.06)", border: enabled ? "1px solid rgba(16,185,129,0.18)" : "1px solid rgba(255,255,255,0.8)", display: "grid", placeItems: "center", color: enabled ? "#0f9d58" : "#64748b" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 3 20 12 6 21 6 3" /></svg>
+            </span>
+          </span>
           <span className="stat-num">{enabled}</span>
-          <span className="stat-label">Enabled Tunnels</span>
+          <span className="stat-sub">{enabled === 0 ? "All stopped" : "Live when CLI is online"}</span>
         </button>
         <button type="button" className="stat-card" onClick={() => onGo("hosts")}>
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span className="stat-label">Hosts</span>
+            <span style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.9)", border: "1px solid rgba(255,255,255,0.9)", display: "grid", placeItems: "center", color: "#0f9d58", boxShadow: "0 1px 6px rgba(15,23,42,0.06)" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+            </span>
+          </span>
           <span className="stat-num">{hosts.length}</span>
-          <span className="stat-label">Hosts</span>
+          <span className="stat-sub">{hosts.length === 0 ? "Add your first host" : "Agents connected via WSS"}</span>
         </button>
         <button type="button" className="stat-card" onClick={() => onGo("providers")}>
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span className="stat-label">Providers</span>
+            <span style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,0.9)", border: "1px solid rgba(255,255,255,0.9)", display: "grid", placeItems: "center", color: "#64748b" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" /></svg>
+            </span>
+          </span>
           <span className="stat-num">{providers.length}</span>
-          <span className="stat-label">Providers</span>
+          <span className="stat-sub">Cloudflare Workers</span>
         </button>
       </div>
 
-      <section className="card" aria-busy={status.loading}>
-        <h2>Worker</h2>
-        {status.loading ? (
-          <>
-            <div className="skeleton" style={{ height: 16, width: "70%" }} />
-            <div className="skeleton" style={{ height: 12, width: "45%", marginTop: 8 }} />
-          </>
-        ) : status.message ? (
-          <p className="muted">
-            {status.message} · Health: {status.healthy ? "OK" : "FAIL"}
-            {status.timestamp && (
-              <> · <span title={status.timestamp}>checked {new Date(status.timestamp).toLocaleTimeString()}</span></>
-            )}
-          </p>
-        ) : (
-          <p className="muted">Worker unreachable.</p>
-        )}
+      <section className="card" aria-busy={status.loading} style={{ display: "flex", gap: 16, alignItems: "center" }}>
+        <span style={{ width: 44, height: 44, borderRadius: 12, background: status.error ? "rgba(239,68,68,0.10)" : status.healthy ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)", border: status.error ? "1px solid rgba(239,68,68,0.16)" : status.healthy ? "1px solid rgba(16,185,129,0.16)" : "1px solid rgba(245,158,11,0.16)", display: "grid", placeItems: "center", color: status.error ? "#dc2626" : status.healthy ? "#0f9d58" : "#d97706", flex: "0 0 44px" }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+        </span>
+        <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+          <span style={{ display: "block", fontWeight: 700, fontSize: 14.5, letterSpacing: "-0.01em" }}>Worker {status.loading ? "Checking…" : status.error ? "Offline" : "Online"}</span>
+          {status.loading ? (
+            <>
+              <span className="skeleton skeleton-inline" style={{ height: 10, width: "60%", borderRadius: 999, marginTop: 6, display: "inline-block" }} />
+            </>
+          ) : status.message ? (
+            <span className="muted" style={{ fontSize: 13 }}>
+              {status.message} · <span style={{ color: status.healthy ? "#0f9d58" : "#dc2626", fontWeight: 600 }}>{status.healthy ? "Healthy" : "Issue"}</span>
+              {status.timestamp && <> · <span title={status.timestamp}>{new Date(status.timestamp).toLocaleTimeString()}</span></>}
+            </span>
+          ) : (
+            <span className="muted" style={{ fontSize: 13 }}>{status.error ?? "Worker unreachable."}</span>
+          )}
+        </span>
+        <span className={`badge ${!status.error && status.healthy ? "badge-on" : status.error ? "badge-off" : ""}`} style={{ flex: "0 0 auto" }}>{status.loading ? "Checking" : status.error ? "Offline" : status.healthy ? "Live" : "Degraded"}</span>
       </section>
 
       {(tunnels.length === 0 || hosts.length === 0) && !status.loading && !status.error && (
