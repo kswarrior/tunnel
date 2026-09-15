@@ -205,16 +205,14 @@ function base64ToUint8(b64: string): Uint8Array {
   return out;
 }
 
-function requireHost(url: URL): string | null {
-  const host = url.searchParams.get("host");
-  return isValidHost(host) ? host : null;
-}
-
-/** Extract `/api/hosts/<id>/...` host segment. */
+/** Extract `/api/hosts/<id>/...` host segment — accepts both host and token forms. */
 function hostFromPath(pathname: string): string | null {
   const m = pathname.match(/^\/api\/hosts\/([^/]+)\/(status|ws|decision|allow|deny|decline|cancel|tunnels)\/?$/);
   if (!m) return null;
-  return isValidHost(m[1]) ? m[1] : null;
+  const raw = m[1];
+  if (isValidHost(raw)) return raw;
+  if (validTokenQ(raw)) return raw;
+  return null;
 }
 
 /** Action suffix of `/api/hosts/<id>/<action>`. */
@@ -1208,6 +1206,109 @@ function configFallbackPage(hostRaw: string): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const now = Date.now();
+
+    // --- Global guard like ks-ssh-v2: per-IP budget + E2E fragment guard ----
+    const ip = clientIp(request);
+    const ipCheck = checkLimit(ipHits, ip, now, RATE_IP_LIMIT, RATE_IP_WINDOW_MS);
+    if (!ipCheck.allowed) return rateLimited(ipCheck.retryAfter);
+
+    // `k` must never be in query string — it lives only in fragment #k=...
+    // Reject loudly like ks-ssh-v2 so a pasted full share link is not leaked.
+    if (url.searchParams.has("k")) {
+      return json(
+        { ok: false, error: "E2E secret must stay in the URL fragment (#k=), never in query" },
+        400,
+      );
+    }
+
+    // --- ks-ssh-v2 compat aliases: WSS relay via /v1/agent and /v1/client ----
+    // CLI: wss://<worker>/v1/agent?token=ABCDE   (ssh style)
+    // Browser: wss://<worker>/v1/client?token=ABCDE
+    // Both map to the same HostPresence DO (host == token) so a single
+    // CLI<->CF<->user bridge works with either naming.
+    if (url.pathname === "/v1/agent" || url.pathname === "/v1/client") {
+      if (request.headers.get("Upgrade") !== "websocket") {
+        return json({ ok: false, error: "expected websocket" }, 426);
+      }
+      const host = requireHost(url);
+      if (!host) {
+        const miss = checkLimit(tokenMiss, `miss:${ip}`, now, RATE_MISS_LIMIT, RATE_MISS_WINDOW_MS);
+        if (!miss.allowed) return rateLimited(miss.retryAfter);
+        return json({ ok: false, error: "bad token (want 5-9 letters/numbers, or 5-64 host id)" }, 400);
+      }
+      const role = url.pathname === "/v1/client" ? "watch" : "agent";
+      const stub = stubFor(env, host);
+      const relayUrl = new URL(request.url);
+      relayUrl.searchParams.set("role", role);
+      // Normalize to internal path the DO understands.
+      const fwd = new Request(
+        `https://presence/api/agent/ws?host=${encodeURIComponent(host)}&role=${role}`,
+        request,
+      );
+      return stub.fetch(fwd);
+    }
+
+    // Fullscreen UI alias like ssh's /v/<TOKEN> -> same DO cache check.
+    // In tunnel the React assets already serve /!config etc; this alias
+    // just makes ssh-style share links (/v/ABCDE) return a helpful redirect.
+    if (url.pathname === "/v" || url.pathname.startsWith("/v/")) {
+      const token = pathToken(url.pathname + "/", "/v/");
+      // Token-guess budgets apply like ssh.
+      if (url.pathname !== "/v" && !token) {
+        const miss = checkLimit(tokenMiss, `miss:${ip}`, now, RATE_MISS_LIMIT, RATE_MISS_WINDOW_MS);
+        if (!miss.allowed) return rateLimited(miss.retryAfter);
+        return json({ ok: false, error: "bad token (want /v/ABCDE; 5 or 9 letters/numbers)" }, 400);
+      }
+      // Known token -> redirect to canonical tunnel home with host param,
+      // unknown token falls through to SPA (or 404 below) after budget.
+      if (token) {
+        return Response.redirect(`${url.origin}/!config?host=${encodeURIComponent(token)}`, 302);
+      }
+    }
+
+    // Relay status compat: ssh clients poll /api/relay/<TOKEN>/status or
+    // /api/ssh/status?token=ABCDE. Map them to /api/hosts/:id/status.
+    if (url.pathname === "/api/ssh/status" || url.pathname === "/api/relay/status") {
+      const host = requireHost(url);
+      if (!host) {
+        const miss = checkLimit(tokenMiss, `miss:${ip}`, now, RATE_MISS_LIMIT, RATE_MISS_WINDOW_MS);
+        if (!miss.allowed) return rateLimited(miss.retryAfter);
+        return json({ ok: false, error: "bad token (want 5-9 letters/numbers)" }, 400);
+      }
+      const stub = stubFor(env, host);
+      const r = await stub.fetch(`https://presence/status?host=${encodeURIComponent(host)}`);
+      const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+      return json({
+        ok: true,
+        agentOnline: (data["online"] as boolean) ?? false,
+        hasUi: false,
+        online: (data["online"] as boolean) ?? false,
+        agents: (data["agents"] as number) ?? 0,
+        host,
+        tunnels: (data["tunnels"] as string[]) ?? [],
+        decision: (data["decision"] as string) ?? "pending",
+      });
+    }
+    if (url.pathname.startsWith("/api/relay/")) {
+      const token = pathToken(url.pathname + "/", "/api/relay/");
+      const tail = url.pathname.slice(("/api/relay/" + (token ?? "")).length);
+      if (token && (tail === "/status" || tail === "" || tail === "/")) {
+        const stub = stubFor(env, token);
+        const r = await stub.fetch(`https://presence/status?host=${encodeURIComponent(token)}`);
+        const data = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+        return json({
+          ok: true,
+          agentOnline: (data["online"] as boolean) ?? false,
+          hasUi: false,
+          online: (data["online"] as boolean) ?? false,
+          agents: (data["agents"] as number) ?? 0,
+          host: token,
+          tunnels: (data["tunnels"] as string[]) ?? [],
+          decision: (data["decision"] as string) ?? "pending",
+        });
+      }
+    }
 
     if (url.pathname === "/api/hello") {
       return json({
@@ -1221,10 +1322,14 @@ export default {
     }
 
     // --- Agent socket: CLI connects here -----------------------------------
-    // WS wss://<worker>/api/agent/ws?host=<random>
+    // WS wss://<worker>/api/agent/ws?host=<random>  (also ?token= compat)
     if (url.pathname === "/api/agent/ws") {
       const host = requireHost(url);
-      if (!host) return json({ error: "missing or invalid ?host=" }, 400);
+      if (!host) {
+        const miss = checkLimit(tokenMiss, `miss:${ip}`, now, RATE_MISS_LIMIT, RATE_MISS_WINDOW_MS);
+        if (!miss.allowed) return rateLimited(miss.retryAfter);
+        return json({ error: "missing or invalid ?host= (or ?token=)" }, 400);
+      }
       if (!env.HOST_PRESENCE) return json({ error: "presence not configured" }, 500);
       const upgrade = request.headers.get("Upgrade") || request.headers.get("upgrade");
       if (!upgrade || upgrade.toLowerCase() !== "websocket") {

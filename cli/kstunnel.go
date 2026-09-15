@@ -34,7 +34,12 @@ const wsGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 const hostAlphabet = "abcdefghijklmnopqrstuvwxyz"
 
-// hostIDLength is the number of random chars in `?host=` tokens.
+// TokenAlphabet for ks-ssh-v2 compat (9-char, no look-alikes like 0/O 1/I).
+// Fresh tunnels mint 9 chars from this set; 5-char lower-case legacy still routes.
+const TokenAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+const TokenLenNew = 9
+
+// hostIDLength is the number of random chars in `?host=` tokens (legacy 5).
 const hostIDLength = 5
 
 // Hello returns a hello-world string. Placeholder until tunnel agent lands.
@@ -54,7 +59,11 @@ func WorkerBaseURL() string {
 }
 
 // IsValidHostID reports whether s is a valid `?host=` token ([A-Za-z0-9_-]{5,64}).
+// It also accepts the ks-ssh-v2 5/9-char token form (upper alphanumeric) for interop.
 func IsValidHostID(s string) bool {
+	if ValidToken(s) {
+		return true
+	}
 	if len(s) < 5 || len(s) > 64 {
 		return false
 	}
@@ -67,9 +76,41 @@ func IsValidHostID(s string) bool {
 	return true
 }
 
+// ValidToken reports whether s is a ks-ssh-v2 style token (5 or 9 A-Z0-9).
+func ValidToken(s string) bool {
+	up := strings.ToUpper(strings.TrimSpace(s))
+	if len(up) != 5 && len(up) != TokenLenNew {
+		return false
+	}
+	for _, c := range up {
+		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			continue
+		}
+		return false
+	}
+	// 5-char legacy tokens still route, fresh ones are 9
+	return true
+}
+
+// GenerateToken creates a fresh 9-char token from TokenAlphabet (no 0/O 1/I).
+// Mirrors cli/backend/src/relay.rs new_token() in ks-ssh-v2.
+func GenerateToken() (string, error) {
+	out := make([]byte, TokenLenNew)
+	max := big.NewInt(int64(len(TokenAlphabet)))
+	for i := range out {
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		out[i] = TokenAlphabet[n.Int64()]
+	}
+	return string(out), nil
+}
+
 // GenerateHostID creates a fresh random host token (5x [a-z]).
 // It is random on every call — never fixed — so each
 // `./kstunnel --config:host` run yields a new `!config?host=` URL.
+// Kept at 5 chars for backwards compat; use GenerateToken() for 9-char.
 func GenerateHostID() (string, error) {
 	out := make([]byte, hostIDLength)
 	max := big.NewInt(int64(len(hostAlphabet)))
