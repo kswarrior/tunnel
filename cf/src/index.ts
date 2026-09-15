@@ -106,9 +106,11 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-/** Canonical host key for DO idFromName — lowercases like ks-ssh-v2 uppercases tokens. */
+/** Canonical host key for DO idFromName — case-insensitive (lower) so
+ *  tunnel's lower "abcde" and ssh's upper "ABCDE" pair in the same room,
+ *  mirroring ks-ssh-v2's upper-casing. Display keeps original casing. */
 function canonicalHost(host: string): string {
-  return host.trim();
+  return host.trim().toLowerCase();
 }
 
 function stubFor(env: Env, host: string): DurableObjectStub {
@@ -352,10 +354,13 @@ export class HostPresence implements DurableObject {
   private hostFromRequest(request: Request): string {
     try {
       const url = new URL(request.url);
-      const q = url.searchParams.get("host");
-      if (isValidHost(q)) return q;
+      // Accept both ?host= (tunnel) and ?token= (ssh compat)
+      const q = url.searchParams.get("host") ?? url.searchParams.get("token");
+      if (q && isValidHost(q)) return q;
+      // Token form is also valid (5 or 9 upper)
+      if (q && /^[A-Za-z0-9]{5}$|^[A-Za-z0-9]{9}$/.test(q.trim())) return q.trim();
       const m = url.pathname.match(/\/api\/hosts\/([^/]+)\//);
-      if (m && isValidHost(m[1])) return m[1];
+      if (m && (isValidHost(m[1]) || /^[A-Za-z0-9]{5}$|^[A-Za-z0-9]{9}$/.test(m[1]))) return m[1];
     } catch {
       // fall through
     }
