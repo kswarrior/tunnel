@@ -1009,16 +1009,21 @@ function tunnelStatusPage(opts: {
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
     `<title>${escHtml(pathShown)} — ${escHtml(heading)} · KS Tunnel</title>\n` +
     "<style>\n" +
-    "body{font-family:system-ui,-apple-system,sans-serif;background:#0f141b;color:#e6ebf2;margin:0;padding:32px 16px}\n" +
-    "main{max-width:640px;margin:0 auto}\n" +
-    ".kicker{color:#8b98ab;font-size:13px}\n" +
-    "code,.cmd{font-family:ui-monospace,monospace}\n" +
-    ".cmd{background:#1a2230;border:1px solid #2c3a52;border-radius:8px;padding:12px;white-space:pre-wrap}\n" +
-    "ul{background:#1a2230;border:1px solid #2c3a52;border-radius:8px;padding:12px 12px 12px 32px}\n" +
-    "#log{background:#0a0e14;border:1px solid #2c3a52;border-radius:8px;padding:12px;height:220px;overflow-y:auto;white-space:pre-wrap;font-size:12px}\n" +
-    ".spin{display:inline-block;width:14px;height:14px;border:2px solid #2c3a52;border-top-color:#4da3ff;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}\n" +
+    ":root{--text:#0f1e2e;--muted:#64748b;--primary:#0ea45e;--primary-soft:rgba(16,185,129,0.10)}\n" +
+    "body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:radial-gradient(900px 600px at 12% -10%, rgba(16,185,129,0.14), transparent 60%),radial-gradient(800px 500px at 88% 0%, rgba(52,211,153,0.12), transparent 58%),radial-gradient(700px 500px at 50% 110%, rgba(167,243,208,0.18), transparent 60%),linear-gradient(180deg,#ffffff 0%,#f7fdf9 45%,#eefcf3 100%);background-attachment:fixed;color:var(--text);margin:0;padding:32px 16px;min-height:100vh;-webkit-font-smoothing:antialiased}\n" +
+    "main{max-width:680px;margin:0 auto;animation:enter .35s cubic-bezier(0.16,1,0.3,1)}\n" +
+    "@keyframes enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}\n" +
+    ".kicker{color:var(--muted);font-size:13px;font-weight:600;letter-spacing:0.01em}\n" +
+    "code,.cmd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}\n" +
+    ".cmd{background:rgba(255,255,255,0.84);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.82);box-shadow:0 1px 2px rgba(15,23,42,0.04),0 1px 0 rgba(255,255,255,0.7) inset;border-radius:10px;padding:12px;white-space:pre-wrap;font-size:13px;line-height:1.5;word-break:break-all}\n" +
+    "ul{background:rgba(255,255,255,0.72);backdrop-filter:blur(14px) saturate(1.12);border:1px solid rgba(255,255,255,0.72);box-shadow:0 8px 32px rgba(15,23,42,0.06);border-radius:10px;padding:14px 14px 14px 32px}\n" +
+    "#log{background:rgba(255,255,255,0.84);border:1px solid rgba(226,232,240,0.95);box-shadow:0 1px 2px rgba(15,23,42,0.03);border-radius:10px;padding:12px;height:220px;overflow-y:auto;white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--muted)}\n" +
+    ".spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(16,185,129,0.18);border-top-color:var(--primary);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}\n" +
     "@keyframes sp{to{transform:rotate(360deg)}}\n" +
-    ".muted{color:#8b98ab}\n" +
+    ".muted{color:var(--muted)}\n" +
+    "h1{font-size:21px;font-weight:800;letter-spacing:-0.03em;margin:8px 0 6px}\n" +
+    "a{color:var(--primary);text-decoration:none}\n" +
+    "a:hover{text-decoration:underline}\n" +
     "</style>\n" +
     "</head>\n" +
     "<body>\n" +
@@ -1169,17 +1174,21 @@ async function tunnelLoadingWrapperResponse(
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
     `<title>${escHtml(shown)} — Loading tunnel · KS Tunnel</title>\n` +
     "<style>\n" +
-    "body{font-family:system-ui,-apple-system,sans-serif;background:#0f141b;color:#e6ebf2;margin:0;padding:32px 16px}\n" +
-    "main{max-width:640px;margin:0 auto}\n" +
-    ".kicker{color:#8b98ab;font-size:13px}\n" +
-    "code,.cmd{font-family:ui-monospace,monospace}\n" +
-    ".cmd{background:#1a2230;border:1px solid #2c3a52;border-radius:8px;padding:12px;white-space:pre-wrap}\n" +
-    "ul{background:#1a2230;border:1px solid #2c3a52;border-radius:8px;padding:12px 12px 12px 32px}\n" +
-    "#log{background:#0a0e14;border:1px solid #2c3a52;border-radius:8px;padding:12px;height:220px;overflow-y:auto;white-space:pre-wrap;font-size:12px}\n" +
-    ".spin{display:inline-block;width:14px;height:14px;border:2px solid #2c3a52;border-top-color:#4da3ff;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}\n" +
+    ":root{--text:#0f1e2e;--muted:#64748b;--primary:#0ea45e;--primary-soft:rgba(16,185,129,0.10)}\n" +
+    "body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:radial-gradient(900px 600px at 12% -10%, rgba(16,185,129,0.14), transparent 60%),radial-gradient(800px 500px at 88% 0%, rgba(52,211,153,0.12), transparent 58%),radial-gradient(700px 500px at 50% 110%, rgba(167,243,208,0.18), transparent 60%),linear-gradient(180deg,#ffffff 0%,#f7fdf9 45%,#eefcf3 100%);background-attachment:fixed;color:var(--text);margin:0;padding:32px 16px;min-height:100vh;-webkit-font-smoothing:antialiased}\n" +
+    "main{max-width:680px;margin:0 auto;animation:enter .35s cubic-bezier(0.16,1,0.3,1)}\n" +
+    "@keyframes enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}\n" +
+    ".kicker{color:var(--muted);font-size:13px;font-weight:600;letter-spacing:0.01em}\n" +
+    "code,.cmd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}\n" +
+    ".cmd{background:rgba(255,255,255,0.84);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.82);box-shadow:0 1px 2px rgba(15,23,42,0.04),0 1px 0 rgba(255,255,255,0.7) inset;border-radius:10px;padding:12px;white-space:pre-wrap;font-size:13px;line-height:1.5;word-break:break-all}\n" +
+    "ul{background:rgba(255,255,255,0.72);backdrop-filter:blur(14px) saturate(1.12);border:1px solid rgba(255,255,255,0.72);box-shadow:0 8px 32px rgba(15,23,42,0.06);border-radius:10px;padding:14px 14px 14px 32px}\n" +
+    "#log{background:rgba(255,255,255,0.84);border:1px solid rgba(226,232,240,0.95);box-shadow:0 1px 2px rgba(15,23,42,0.03);border-radius:10px;padding:12px;height:220px;overflow-y:auto;white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--muted)}\n" +
+    ".spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(16,185,129,0.18);border-top-color:var(--primary);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}\n" +
     "@keyframes sp{to{transform:rotate(360deg)}}\n" +
-    ".muted{color:#8b98ab}\n" +
-    "a{color:#4da3ff}\n" +
+    ".muted{color:var(--muted)}\n" +
+    "h1{font-size:21px;font-weight:800;letter-spacing:-0.03em;margin:8px 0 6px}\n" +
+    "a{color:var(--primary);text-decoration:none}\n" +
+    "a:hover{text-decoration:underline}\n" +
     "</style>\n" +
     "</head>\n" +
     "<body>\n" +
@@ -1254,15 +1263,19 @@ function configFallbackPage(hostRaw: string): Response {
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
     "<title>Allow this host? · KS Tunnel</title>\n" +
     "<style>\n" +
-    "body{font-family:system-ui,-apple-system,sans-serif;background:#0f141b;color:#e6ebf2;margin:0;padding:32px 16px}\n" +
+    ":root{--text:#0f1e2e;--muted:#64748b;--primary:#0ea45e;--danger:#dc2626}\n" +
+    "body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;background:radial-gradient(900px 600px at 12% -10%, rgba(16,185,129,0.14), transparent 60%),radial-gradient(800px 500px at 88% 0%, rgba(52,211,153,0.12), transparent 58%),radial-gradient(700px 500px at 50% 110%, rgba(167,243,208,0.18), transparent 60%),linear-gradient(180deg,#ffffff 0%,#f7fdf9 45%,#eefcf3 100%);background-attachment:fixed;color:var(--text);margin:0;padding:32px 16px;min-height:100vh;-webkit-font-smoothing:antialiased}\n" +
     "main{max-width:560px;margin:0 auto}\n" +
-    "code{font-family:ui-monospace,monospace}\n" +
-    ".card{background:#1a2230;border:1px solid #2c3a52;border-radius:10px;padding:20px}\n" +
+    "code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}\n" +
+    ".card{background:rgba(255,255,255,0.72);backdrop-filter:blur(14px) saturate(1.12);border:1px solid rgba(255,255,255,0.72);box-shadow:0 8px 32px rgba(15,23,42,0.06);border-radius:14px;padding:20px;position:relative;overflow:hidden}\n" +
+    ".card::before{content:\"\";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,0.68) 0%,rgba(255,255,255,0.22) 100%);pointer-events:none}\n" +
+    ".card>*{position:relative;z-index:1}\n" +
     ".row{display:flex;gap:10px;margin-top:14px}\n" +
-    "button{flex:1;padding:10px;border-radius:8px;border:1px solid #2c3a52;background:#242f45;color:#e6ebf2;cursor:pointer;font-size:15px}\n" +
-    "button.primary{background:#2f6fed;border-color:#2f6fed}\n" +
+    "button{flex:1;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.82);background:rgba(255,255,255,0.84);backdrop-filter:blur(8px);box-shadow:0 1px 2px rgba(15,23,42,0.04);color:var(--text);cursor:pointer;font-size:15px;font-weight:650}\n" +
+    "button.primary{background:linear-gradient(135deg, #0f9d58 0%, #10b981 55%, #34d399 100%);border-color:rgba(255,255,255,0.30);color:#fff;box-shadow:0 6px 18px rgba(16,185,129,0.28)}\n" +
     "button:disabled{opacity:.5;cursor:default}\n" +
-    ".ok{color:#5fd68a}.err{color:#ff7a7a}.muted{color:#8b98ab}\n" +
+    ".ok{color:#0ea45e}.err{color:var(--danger)}.muted{color:var(--muted)}\n" +
+    "h1{font-size:21px;font-weight:800;letter-spacing:-0.03em}\n" +
     "</style>\n" +
     "</head>\n" +
     "<body>\n" +
