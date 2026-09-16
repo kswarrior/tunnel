@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "workspaces": ["cf"],
+  "scripts": {
+    "build": "npm --prefix cf run build",
+    "build:cf": "npm --prefix cf run build",
+    "dev": "npm --prefix cf run dev",
+    "dev:worker": "npm --prefix cf run dev:worker",
+    "deploy": "npm --prefix cf run deploy",
+    "typecheck": "npm --prefix cf run typecheck"
+  }
+}
