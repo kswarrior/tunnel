@@ -24,7 +24,6 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
             KS Tunnel
             <span style={{ width: 8, height: 8, borderRadius: 999, background: status.error ? "#ef4444" : status.loading ? "#f59e0b" : "#10b981", boxShadow: status.error ? "0 0 0 5px rgba(239,68,68,0.14)" : "0 0 0 5px rgba(16,185,129,0.16)", flex: "0 0 8px" }} />
           </h1>
-          <p className="muted">Expose local services through Cloudflare Workers — frosted glass, instant edge proxy.</p>
         </div>
         <button type="button" className="btn" onClick={onRefresh} disabled={status.loading} style={{ alignSelf: "center" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
