@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:worker": "wrangler dev",
+    "dev": "vite --port 8080",
+    "dev:worker": "wrangler dev --port 8080",
     "build": "tsc --noEmit && vite build",
-    "preview": "npm run build && wrangler dev",
+    "preview": "npm run build && wrangler dev --port 8080",
     "deploy": "npm run build && wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
