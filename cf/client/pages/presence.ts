@@ -253,7 +253,7 @@ function sendViaWatcherWS(host: string, payload: string): Promise<void> {
     };
     try {
       const ws = new WebSocket(watcherWSURL(host));
-      const timer = window.setTimeout(() => {
+      const timer = setTimeout(() => {
         try {
           ws.close();
         } catch {
@@ -267,18 +267,18 @@ function sendViaWatcherWS(host: string, payload: string): Promise<void> {
         } catch {
           // ignore
         }
-        window.setTimeout(() => {
+        setTimeout(() => {
           try {
             ws.close();
           } catch {
             // ignore
           }
-          window.clearTimeout(timer);
+          clearTimeout(timer);
           done();
         }, 400);
       };
       ws.onerror = () => {
-        window.clearTimeout(timer);
+        clearTimeout(timer);
         try {
           ws.close();
         } catch {
