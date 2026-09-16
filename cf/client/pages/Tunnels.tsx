@@ -302,7 +302,11 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
   };
 
   const handleAdd = () => {
-    const err = validate({ name, slug: slug || name, target, hostId, providerId });
+    // Auto-setup: fill host/provider from defaults if the user didn't pick,
+    // so creating a tunnel immediately publishes and is served via host-mode.
+    const effectiveHostId = hostId || defaultHostId;
+    const effectiveProviderId = providerId || defaultProviderId;
+    const err = validate({ name, slug: slug || name, target, hostId: effectiveHostId, providerId: effectiveProviderId });
     if (err) {
       setFormError(err);
       return;
@@ -310,8 +314,8 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     const t = newTunnel(name, target, {
       slug: normalizeSlug(slug || name),
       tunnelType,
-      hostId,
-      providerId,
+      hostId: effectiveHostId,
+      providerId: effectiveProviderId,
     });
     onAdd(t);
     setFormError(null);
@@ -319,7 +323,7 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
     setPageNotice(`Saved ${t.name} — publishing /!tunnel=${t.slug}…`);
     publishTunnel(t, hosts)
       .then(() => {
-        setPageNotice(`Published — visit /!tunnel=${t.slug} to see ${t.target}.`);
+        setPageNotice(`Published — /!tunnel=${t.slug} → ${t.target} is live when the host agent is online (kstunnel --host <id> auto-serves it). Visit /!tunnel=${t.slug} to see it.`);
         registry.refresh();
       })
       .catch((e: unknown) => {

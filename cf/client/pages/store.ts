@@ -176,7 +176,7 @@ export function newTunnel(
     target: target.trim(),
     hostId: (opts?.hostId ?? "").trim(),
     providerId: (opts?.providerId ?? "").trim(),
-    active: false,
+    active: true,
     createdAt: Date.now(),
   };
 }
