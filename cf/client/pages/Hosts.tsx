@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { Modal } from "../components/Modal";
 import {
   CopyIcon,
@@ -29,7 +29,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function HostCard({
+const HostCard = memo(function HostCard({
   host,
   tunnels,
   onEdit,

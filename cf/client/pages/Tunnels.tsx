@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Modal } from "../components/Modal";
 import { CheckingPills, Skeleton } from "../components/Skeleton";
 import {
@@ -77,7 +77,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function TunnelCard({
+const TunnelCard = memo(function TunnelCard({
   tunnel,
   hosts,
   providers,
@@ -226,7 +226,7 @@ function TunnelCard({
       ]}
     />
   );
-}
+});
 
 export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpdate, onRemove }: TunnelsPageProps) {
   const [adding, setAdding] = useState(false);

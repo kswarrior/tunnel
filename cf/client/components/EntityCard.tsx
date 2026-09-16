@@ -32,7 +32,7 @@ interface EntityCardProps {
   actions: EntityAction[];
 }
 
-export function EntityCard({ icon, name, sub, label, notes, actions }: EntityCardProps) {
+export const EntityCard = memo(function EntityCard({ icon, name, sub, label, notes, actions }: EntityCardProps) {
   return (
     <article className="item-card">
       <div className="entity-top">
@@ -64,7 +64,7 @@ export function EntityCard({ icon, name, sub, label, notes, actions }: EntityCar
       </div>
     </article>
   );
-}
+});
 
 function Svg({
   children,
