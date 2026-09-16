@@ -21,7 +21,8 @@ not_found_handling = "single-page-application"
 #   /!tunnel=ks  -> path contains "=" (not a "/"), so "/!tunnel/*" alone doesn't match.
 #   /!tunnel%3Dks and /%21tunnel%3Dks are what some browsers/CDNs send when they encode.
 # Use prefix wildcards ("/!tunnel*") so the Worker runs first and can proxy or redirect.
-run_worker_first = ["/api", "/api/*", "/!tunnel", "/!tunnel/*", "/!tunnel*", "/!tunnel=*", "/!tunnel%3D*", "/!tunnel%3d*", "/%21tunnel*", "/%21tunnel%3D*", "/%21tunnel%3d*", "/v", "/v/*", "/v1", "/v1/*"]
+# Note: wrangler errors on redundant patterns, so just the two wildcards cover all variants.
+run_worker_first = ["/api", "/api/*", "/!tunnel*", "/%21tunnel*", "/v", "/v/*", "/v1", "/v1/*"]
 
 [durable_objects]
 bindings = [
