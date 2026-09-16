@@ -402,7 +402,7 @@ func RunTunnel(ctx context.Context, workerBase, hostID, slug, target string, log
 					return // presence/decision/pong noise — main wss owns control
 				}
 				go handleTunnelRequest(&mu, send, t, req, logf)
-			})
+			}, &mu)
 		}(target)
 
 		ticker := time.NewTicker(25 * time.Second)

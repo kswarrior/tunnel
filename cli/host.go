@@ -266,20 +266,24 @@ func RunHost(ctx context.Context, workerBase, hostID string, logf func(string, .
 						// full — drop it, the registry poll heals shortly.
 					}
 				}
-			})
+			}, &writeMu)
 		}()
 
 		ticker := time.NewTicker(25 * time.Second)
 		poll := time.NewTicker(30 * time.Second)
 		// Immediate hello ping + spec pull so a fresh agent learns the
 		// current desired list even if it missed the connect-time push.
+		writeMu.Lock()
 		_ = wsWriteText(conn, `{"type":"ping"}`)
 		_ = wsWriteText(conn, `{"type":"get-tunnels"}`)
+		writeMu.Unlock()
 		alive := true
 		for alive {
 			select {
 			case <-ctx.Done():
+				writeMu.Lock()
 				_ = wsWriteFrame(conn, 0x8, []byte{})
+				writeMu.Unlock()
 				conn.Close()
 				ticker.Stop()
 				poll.Stop()
@@ -287,7 +291,9 @@ func RunHost(ctx context.Context, workerBase, hostID string, logf func(string, .
 			case <-denyCh:
 				ticker.Stop()
 				poll.Stop()
+				writeMu.Lock()
 				_ = wsWriteFrame(conn, 0x8, []byte{})
+				writeMu.Unlock()
 				conn.Close()
 				logf("canceled by browser — not saved (host %s)", hostID)
 				return ErrDenied
@@ -312,7 +318,10 @@ func RunHost(ctx context.Context, workerBase, hostID string, logf func(string, .
 				}
 				alive = false
 			case <-ticker.C:
-				if err := wsWriteText(conn, `{"type":"ping"}`); err != nil {
+				writeMu.Lock()
+				err := wsWriteText(conn, `{"type":"ping"}`)
+				writeMu.Unlock()
+				if err != nil {
 					logf("heartbeat failed: %v (reconnecting...)", err)
 					alive = false
 				}
