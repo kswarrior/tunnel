@@ -239,7 +239,13 @@ func RegisterTunnel(workerBase, hostID, slug, target, name string, logf func(str
 	}
 }
 
-var tunnelHTTPClient = &http.Client{Timeout: 25 * time.Second}
+var tunnelHTTPClient = &http.Client{
+	Timeout: 25 * time.Second,
+	// Don't follow redirects — return the 3xx verbatim so the visitor sees it.
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 // fetchLocal performs the local HTTP request against target (host:port).
 func fetchLocal(target, method, path string, headers map[string]string, body []byte) (int, map[string]string, []byte, error) {
