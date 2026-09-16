@@ -76,28 +76,6 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
         </button>
       </div>
 
-      <section className="card" aria-busy={status.loading} style={{ display: "flex", gap: 16, alignItems: "center" }}>
-        <span style={{ width: 44, height: 44, borderRadius: 12, background: status.error ? "rgba(239,68,68,0.10)" : status.healthy ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)", border: status.error ? "1px solid rgba(239,68,68,0.16)" : status.healthy ? "1px solid rgba(16,185,129,0.16)" : "1px solid rgba(245,158,11,0.16)", display: "grid", placeItems: "center", color: status.error ? "#dc2626" : status.healthy ? "#0f9d58" : "#d97706", flex: "0 0 44px" }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
-        </span>
-        <span style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-          <span style={{ display: "block", fontWeight: 700, fontSize: 14.5, letterSpacing: "-0.01em" }}>Worker {status.loading ? "Checking…" : status.error ? "Offline" : "Online"}</span>
-          {status.loading ? (
-            <>
-              <span className="skeleton skeleton-inline" style={{ height: 10, width: "60%", borderRadius: 999, marginTop: 6, display: "inline-block" }} />
-            </>
-          ) : status.message ? (
-            <span className="muted" style={{ fontSize: 13 }}>
-              {status.message} · <span style={{ color: status.healthy ? "#0f9d58" : "#dc2626", fontWeight: 600 }}>{status.healthy ? "Healthy" : "Issue"}</span>
-              {status.timestamp && <> · <span title={status.timestamp}>{new Date(status.timestamp).toLocaleTimeString()}</span></>}
-            </span>
-          ) : (
-            <span className="muted" style={{ fontSize: 13 }}>{status.error ?? "Worker unreachable."}</span>
-          )}
-        </span>
-        <span className={`badge ${!status.error && status.healthy ? "badge-on" : status.error ? "badge-off" : ""}`} style={{ flex: "0 0 auto" }}>{status.loading ? "Checking" : status.error ? "Offline" : status.healthy ? "Live" : "Degraded"}</span>
-      </section>
-
       {(tunnels.length === 0 || hosts.length === 0) && !status.loading && !status.error && (
         <section className="card">
           <h2>Quick start</h2>
