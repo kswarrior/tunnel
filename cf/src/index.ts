@@ -1321,6 +1321,28 @@ export default {
     const url = new URL(request.url);
     const now = Date.now();
 
+    // Canonicalize percent-encoded tunnel paths so the address bar stays clean:
+    // /!tunnel=ks should stay /!tunnel=ks, not /!tunnel%3Dks or /%21tunnel%3Dks.
+    // Some browsers/CDNs percent-encode "!" -> %21 and "=" -> %3D in the pathname.
+    // The worker already accepts both via decodeURIComponent, but we redirect the
+    // encoded form to the canonical decoded form (302) for GET navigations.
+    // Skip websockets (Upgrade: websocket) and non-GET.
+    if (request.method === "GET" && !(request.headers.get("Upgrade") || request.headers.get("upgrade"))) {
+      const rawPath = url.pathname;
+      if (rawPath.includes("%")) {
+        try {
+          const decoded = decodeURIComponent(rawPath);
+          // After decoding, "/%21tunnel%3Dks" -> "/!tunnel=ks" which starts with "/!tunnel".
+          if (decoded !== rawPath && decoded.toLowerCase().startsWith("/!tunnel")) {
+            const target = decoded + url.search;
+            return Response.redirect(url.origin + target, 302);
+          }
+        } catch {
+          // ignore malformed percent sequences
+        }
+      }
+    }
+
     // --- Global guard like ks-ssh-v2: per-IP budget + E2E fragment guard ----
     const ip = clientIp(request);
     const ipCheck = checkLimit(ipHits, ip, now, RATE_IP_LIMIT, RATE_IP_WINDOW_MS);
