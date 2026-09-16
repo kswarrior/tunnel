@@ -1975,7 +1975,7 @@ export default {
                   // Matches " /..., ' /..., ` /..., ( /...  and keeps prefix
                   // Simple but covers 90% of SPA routing: "/assets/", "/api/", "/ws"
                   const before = js;
-                  js = js.replace(/(["'`\(\s,;:=])\/(?!\/|!tunnel=|!config)([a-zA-Z0-9_\-\.\/])/g, (m, pre, first) => `${pre}${prefix}/${first}`);
+                  js = js.replace(/(["'])\/(?!\/|!tunnel=|!config)/g, (m, q) => `${q}${prefix}/`);
                   // Fix double prefix if any
                   js = js.replace(new RegExp(prefix + "/" + prefix + "/", "g"), prefix + "/");
                   if (js !== before) {
