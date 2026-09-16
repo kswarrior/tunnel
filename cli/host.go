@@ -239,6 +239,7 @@ func RunHost(ctx context.Context, workerBase, hostID string, logf func(string, .
 		allowCh := make(chan struct{}, 4)
 		specCh := make(chan []TunnelSpec, 4)
 		done := make(chan error, 1)
+		var writeMu sync.Mutex
 		go func() {
 			done <- wsServe(conn, br, func(msg string) {
 				if decision, ok := ParseDecisionMessage(msg); ok {

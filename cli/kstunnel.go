@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -433,9 +434,20 @@ func wsWriteText(conn net.Conn, text string) error {
 }
 
 // wsServe reads frames until close/error. Ping -> Pong, text -> onText.
-func wsServe(conn net.Conn, br *bufio.Reader, onText func(string)) error {
+// writeMu, if non-nil, serializes all writes to conn (pong/close) with
+// concurrent ticker pings from the caller. This prevents interleaved frames.
+func wsServe(conn net.Conn, br *bufio.Reader, onText func(string), writeMu *sync.Mutex) error {
 	var frag []byte
 	var fragOpcode byte
+	safeWrite := func(opcode byte, payload []byte) {
+		if writeMu != nil {
+			writeMu.Lock()
+			_ = wsWriteFrame(conn, opcode, payload)
+			writeMu.Unlock()
+		} else {
+			_ = wsWriteFrame(conn, opcode, payload)
+		}
+	}
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		hdr := make([]byte, 2)
@@ -484,38 +496,62 @@ func wsServe(conn net.Conn, br *bufio.Reader, onText func(string)) error {
 		}
 		switch opcode {
 		case 0x8: // close
-			_ = wsWriteFrame(conn, 0x8, []byte{})
+			safeWrite(0x8, []byte{})
 			return io.EOF
 		case 0x9: // ping
-			_ = wsWriteFrame(conn, 0xA, payload)
+			safeWrite(0xA, payload)
 		case 0xA: // pong
 			// ignore
-		case 0x1, 0x2: // text/binary
+		case 0x1: // text
 			if !fin {
+				// start fragmented text
 				if frag == nil {
-					fragOpcode = opcode
+					fragOpcode = 0x1
+					frag = append([]byte(nil), payload...)
+				} else {
+					// protocol error: new text before prior frag done — append anyway
+					frag = append(frag, payload...)
 				}
-				frag = append(frag, payload...)
 				continue
 			}
-			var full []byte
+			// FIN set
 			if frag != nil {
-				full = append(frag, payload...)
+				// fragmented text completing: frag + payload
+				frag = append(frag, payload...)
+				if fragOpcode == 0x1 && onText != nil {
+					onText(string(frag))
+				}
 				frag = nil
+				fragOpcode = 0
 			} else {
-				full = payload
+				if onText != nil {
+					onText(string(payload))
+				}
 			}
-			if fragOpcode == 0x2 && opcode == 0x1 {
-				fragOpcode = opcode
+		case 0x2: // binary — we don't use binary, ignore but handle fragmentation to keep state consistent
+			if !fin {
+				if frag == nil {
+					fragOpcode = 0x2
+					frag = append([]byte(nil), payload...)
+				} else {
+					frag = append(frag, payload...)
+				}
+				continue
 			}
-			if onText != nil && (opcode == 0x1 || fragOpcode == 0x1 || len(full) > 0) {
-				onText(string(full))
+			if frag != nil {
+				// end of fragmented binary — discard
+				frag = nil
+				fragOpcode = 0
 			}
-			fragOpcode = 0
+			// single binary frame — ignore
 		case 0x0: // continuation
+			if frag == nil {
+				// unexpected continuation — ignore
+				continue
+			}
 			frag = append(frag, payload...)
 			if fin {
-				if onText != nil {
+				if fragOpcode == 0x1 && onText != nil {
 					onText(string(frag))
 				}
 				frag = nil
