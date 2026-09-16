@@ -1889,13 +1889,32 @@ export default {
             // so the proxied app loads through /!tunnel=<slug>/*.
             const ct = (payload.headers?.["content-type"] ?? payload.headers?.["Content-Type"] ?? "") as string;
             const isHtml = typeof ct === "string" && ct.toLowerCase().includes("text/html");
-            if (isHtml && bodyBytes.length > 0 && status === 200 && request.method === "GET") {
+            const isCss = typeof ct === "string" && ct.toLowerCase().includes("text/css");
+            const isJs = typeof ct === "string" && (ct.toLowerCase().includes("application/javascript") || ct.toLowerCase().includes("text/javascript") || ct.toLowerCase().includes("application/x-javascript"));
+            const shouldRewriteHtml = isHtml && bodyBytes.length > 0 && status === 200 && request.method === "GET";
+            const shouldRewriteCss = isCss && bodyBytes.length > 0 && status === 200 && request.method === "GET";
+            // Rewrite CSS url() references even for CSS files proxied via tunnel.
+            if (shouldRewriteCss) {
+              try {
+                let css = new TextDecoder().decode(bodyBytes);
+                const prefix = `/!tunnel=${entry.slug}`;
+                if (!css.includes(prefix + "/")) {
+                  css = css.replace(/url\(\s*["']?\/(?!\/|!tunnel=|!config)/gi, `url("${prefix}/`);
+                  css = css.replace(/url\(\/(?!\/|!tunnel=|!config)/gi, `url(${prefix}/`);
+                  bodyBytes = new TextEncoder().encode(css);
+                  outHeaders.set("content-length", String(bodyBytes.length));
+                }
+              } catch {
+                // ignore
+              }
+            }
+            if (shouldRewriteHtml) {
               try {
                 let html = new TextDecoder().decode(bodyBytes);
                 const prefix = `/!tunnel=${entry.slug}`;
                 // Only rewrite if not already rewritten (avoid double prefix).
                 if (!html.includes(prefix + "/")) {
-                  const interceptor = `<script>(function(){const p="${prefix}";function _rw(u){if(typeof u!=="string")return u;if(u.startsWith(p)||u.startsWith("/!tunnel=")||u.startsWith("/!config")||u.startsWith("//")||u.startsWith("http://")||u.startsWith("https://")||u.startsWith("data:")||u.startsWith("blob:"))return u;if(u.startsWith("/"))return p+u;return u}const _fetch=window.fetch;window.fetch=function(i,init){if(typeof i==="string"){i=_rw(i)}else if(i instanceof Request){const url=i.url;try{const u=new URL(url,location.origin);if(u.origin===location.origin&&u.pathname.startsWith("/")&&!u.pathname.startsWith(p)){u.pathname=p+u.pathname;i=new Request(u.toString(),i)}}catch{}}return _fetch.call(this,i,init)};const _open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,url){if(typeof url==="string")url=_rw(url);return _open.apply(this,[m,url,...Array.prototype.slice.call(arguments,2)])};const _WS=window.WebSocket;window.WebSocket=function(url,protocols){if(typeof url==="string"){if(url.startsWith("/"))url=_rw(url);else{try{const u=new URL(url,location.href);if(u.pathname.startsWith("/")&&!u.pathname.startsWith(p))u.pathname=p+u.pathname,url=u.toString()}catch{}}}return protocols?new _WS(url,protocols):new _WS(url)};const _ES=new EventSource;window.EventSource=function(url,opts){if(typeof url==="string")url=_rw(url);return new _ES(url,opts)};})();</script>`;
+                  const interceptor = `<script>(function(){const p="${prefix}";function _rw(u){if(typeof u!=="string")return u;if(u.startsWith(p)||u.startsWith("/!tunnel=")||u.startsWith("/!config")||u.startsWith("//")||u.startsWith("http://")||u.startsWith("https://")||u.startsWith("data:")||u.startsWith("blob:"))return u;if(u.startsWith("/"))return p+u;return u}const _fetch=window.fetch;window.fetch=function(i,init){if(typeof i==="string"){i=_rw(i)}else if(i instanceof Request){const url=i.url;try{const u=new URL(url,location.origin);if(u.origin===location.origin&&u.pathname.startsWith("/")&&!u.pathname.startsWith(p)){u.pathname=p+u.pathname;i=new Request(u.toString(),i)}}catch{}}return _fetch.call(this,i,init)};const _open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,url){if(typeof url==="string")url=_rw(url);return _open.apply(this,[m,url,...Array.prototype.slice.call(arguments,2)])};const _WS=window.WebSocket;window.WebSocket=function(url,protocols){if(typeof url==="string"){if(url.startsWith("/"))url=_rw(url);else{try{const u=new URL(url,location.href);if(u.pathname.startsWith("/")&&!u.pathname.startsWith(p))u.pathname=p+u.pathname,url=u.toString()}catch{}}}return protocols?new _WS(url,protocols):new _WS(url)};const _ES=new EventSource;window.EventSource=function(url,opts){if(typeof url==="string")url=_rw(url);return new _ES(url,opts)};try{const _ps=history.pushState;history.pushState=function(s,t,u){if(typeof u==="string"&&u.startsWith("/")&&!u.startsWith(p)&&!u.startsWith("/!tunnel=")&&!u.startsWith("/!config"))u=p+u;return _ps.call(this,s,t,u)};const _rs=history.replaceState;history.replaceState=function(s,t,u){if(typeof u==="string"&&u.startsWith("/")&&!u.startsWith(p)&&!u.startsWith("/!tunnel=")&&!u.startsWith("/!config"))u=p+(u.startsWith("/")?u:"/"+u);return _rs.call(this,s,t,u)};}catch{};try{const _assign=Location.prototype.assign;Location.prototype.assign=function(u){if(typeof u==="string"&&u.startsWith("/")&&!u.startsWith(p))u=p+u;return _assign.call(this,u)};const _replace=Location.prototype.replace;Location.prototype.replace=function(u){if(typeof u==="string"&&u.startsWith("/")&&!u.startsWith(p))u=p+u;return _replace.call(this,u)};}catch{};})();</script>`;
                   // Rewrite absolute href/src/action and CSS url()
                   // href="/assets/..." -> href="/!tunnel=ks/assets/..."
                   html = html.replace(/(href|src|action)=["']\/(?!\/|!tunnel=|!config)/gi, (m: string, attr: string) => `${attr}="${prefix}/`);
