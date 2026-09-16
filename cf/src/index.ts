@@ -1993,10 +1993,54 @@ export default {
                 const prefix = `/!tunnel=${entry.slug}`;
                 // Only rewrite if not already rewritten (avoid double prefix).
                 if (!html.includes(prefix + "/")) {
-                                                      const interceptor = `<script>(function(){const p="${prefix}";function _rw(u){if(typeof u!=="string")return u;if(u.startsWith(p)||u.startsWith("/!tunnel=")||u.startsWith("/!config")||u.startsWith("//")||u.startsWith("http://")||u.startsWith("https://")||u.startsWith("data:")||u.startsWith("blob:"))return u;if(u.startsWith("/"))return p+u;return u}function _rwAbs(u){if(typeof u!=="string")return u;try{const parsed=new URL(u,location.origin);if(parsed.origin!==location.origin)return u;if(parsed.pathname.startsWith(p)||parsed.pathname.startsWith("/!tunnel=")||parsed.pathname.startsWith("/!config"))return u;if(parsed.pathname.startsWith("/")){parsed.pathname=p+(parsed.pathname==="/"?"/":parsed.pathname);return parsed.toString()}}catch{if(u.startsWith("/")&&!u.startsWith(p))return p+u;}return u}const _fetch=window.fetch;window.fetch=function(i,init){if(typeof i==="string"){i=_rw(i)}else if(i instanceof Request){const url=i.url;try{const u=new URL(url,location.origin);if(u.origin===location.origin&&u.pathname.startsWith("/")&&!u.pathname.startsWith(p)){u.pathname=p+u.pathname;i=new Request(u.toString(),i)}}catch{}}return _fetch.call(this,i,init)};const _open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,url){if(typeof url==="string")url=_rw(url);return _open.apply(this,[m,url,...Array.prototype.slice.call(arguments,2)])};const _WS=window.WebSocket;window.WebSocket=function(url,protocols){if(typeof url==="string"){if(url.startsWith("/"))url=_rw(url);else{try{const u=new URL(url,location.href);if(u.pathname.startsWith("/")&&!u.pathname.startsWith(p))u.pathname=p+u.pathname,url=u.toString()}catch{}}}return protocols?new _WS(url,protocols):new _WS(url)};const _ES=new EventSource;window.EventSource=function(url,opts){if(typeof url==="string")url=_rw(url);return new _ES(url,opts)};try{const _ps=history.pushState;history.pushState=function(s,t,u){if(typeof u==="string")u=_rwAbs(u);return _ps.call(this,s,t,u)};const _rs=history.replaceState;history.replaceState=function(s,t,u){if(typeof u==="string")u=_rwAbs(u);return _rs.call(this,s,t,u)};}catch{};try{const _assign=Location.prototype.assign;Location.prototype.assign=function(u){return _assign.call(this,_rwAbs(u))};const _replace=Location.prototype.replace;Location.prototype.replace=function(u){return _replace.call(this,_rwAbs(u))};const d=Object.getOwnPropertyDescriptor(Location.prototype,"href");if(d&&d.set){Object.defineProperty(Location.prototype,"href",{get:function(){const v=d.get.call(this);try{const u=new URL(v);if(u.pathname===p||u.pathname===p+"/")return u.origin+"/";if(u.pathname.startsWith(p+"/")){u.pathname=u.pathname.slice(p.length)||"/";return u.toString()}}catch{}return v;},set:function(v){return d.set.call(this,_rwAbs(v))},configurable:true});}const d2=Object.getOwnPropertyDescriptor(Location.prototype,"pathname");if(d2&&d2.set){Object.defineProperty(Location.prototype,"pathname",{get:function(){const v=d2.get.call(this);if(v===p||v===p+"/")return "/";if(v.startsWith(p+"/"))return v.slice(p.length)||"/";return v;},set:function(v){if(typeof v==="string"&&v.startsWith("/")&&!v.startsWith(p))v=p+v;return d2.set.call(this,v)},configurable:true});}const d3=Object.getOwnPropertyDescriptor(Location.prototype,"search");if(d3&&d3.get){Object.defineProperty(Location.prototype,"search",{get:function(){const v=d3.get.call(this);try{const u=new URL(location.href);if((u.pathname===p||u.pathname===p+"/"||u.pathname.startsWith(p+"/"))&&u.searchParams.get("raw")==="1"){const ps=new URLSearchParams(u.search);ps.delete("raw");const s=ps.toString();return s?"?"+s:"";}}catch{}return v;},set:function(v){return d3.set.call(this,v)},configurable:true});}const d4=Object.getOwnPropertyDescriptor(Location.prototype,"hash");if(d4&&d4.get){ /* keep */ }const d3=Object.getOwnPropertyDescriptor(Location.prototype,"search");if(d3&&d3.get){ /* keep as is */ }const _openWin=window.open;if(_openWin){window.open=function(u,n,f){if(typeof u==="string")u=_rwAbs(u);return _openWin.call(this,u,n,f)};}}catch{};try{if(location.pathname===p)history.replaceState(history.state,"",p+"/");}catch{};})();</script>`;
-                  // Rewrite absolute href/src/action and CSS url()
-                  // href="/assets/..." -> href="/!tunnel=ks/assets/..."
-                  html = html.replace(/(href|src|action)=["']\/(?!\/|!tunnel=|!config)/gi, (m: string, attr: string) => `${attr}="${prefix}/`);
+                                                      const interceptor = `<script>(function(){const p="${prefix}";function _rw(u){if(typeof u!=="string")return u;if(u.startsWith(p)||u.startsWith("/!tunnel=")||u.startsWith("/!config")||u.startsWith("//")||u.startsWith("http://")||u.startsWith("https://")||u.startsWith("data:")||u.startsWith("blob:"))return u;if(u.startsWith("/"))return p+u;return u}function _rwAbs(u){if(typeof u!=="string")return u;try{const parsed=new URL(u,location.origin);if(parsed.origin!==location.origin)return u;if(parsed.pathname.startsWith(p)||parsed.pathname.startsWith("/!tunnel=")||parsed.pathname.startsWith("/!config"))return u;if(parsed.pathname.startsWith("/")){parsed.pathname=p+(parsed.pathname==="/"?"/":parsed.pathname);return parsed.toString()}}catch{if(u.startsWith("/")&&!u.startsWith(p))return p+u;}return u}const _fetch=window.fetch;window.fetch=function(i,init){if(typeof i==="string"){i=_rw(i)}else if(i instanceof Request){const url=i.url;try{const u=new URL(url,location.origin);if(u.origin===location.origin&&u.pathname.startsWith("/")&&!u.pathname.startsWith(p)){u.pathname=p+u.pathname;i=new Request(u.toString(),i)}}catch{}}return _fetch.call(this,i,init)};const _open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,url){if(typeof url==="string")url=_rw(url);return _open.apply(this,[m,url,...Array.prototype.slice.call(arguments,2)])};const _WS=window.WebSocket;window.WebSocket=function(url,protocols){if(typeof url==="string"){if(url.startsWith("/"))url=_rw(url);else{try{const u=new URL(url,location.href);if(u.pathname.startsWith("/")&&!u.pathname.startsWith(p))u.pathname=p+u.pathname,url=u.toString()}catch{}}}return protocols?new _WS(url,protocols):new _WS(url)};const _ES=new EventSource;window.EventSource=function(url,opts){if(typeof url==="string")url=_rw(url);return new _ES(url,opts)};try{const _ps=history.pushState;history.pushState=function(s,t,u){if(typeof u==="string")u=_rwAbs(u);return _ps.call(this,s,t,u)};const _rs=history.replaceState;history.replaceState=function(s,t,u){if(typeof u==="string")u=_rwAbs(u);return _rs.call(this,s,t,u)};}catch{};try{const _assign=Location.prototype.assign;Location.prototype.assign=function(u){return _assign.call(this,_rwAbs(u))};const _replace=Location.prototype.replace;Location.prototype.replace=function(u){return _replace.call(this,_rwAbs(u))};const d=Object.getOwnPropertyDescriptor(Location.prototype,"href");if(d&&d.set){Object.defineProperty(Location.prototype,"href",{get:function(){const v=d.get.call(this);try{const u=new URL(v);if(u.pathname===p||u.pathname===p+"/")return u.origin+"/";if(u.pathname.startsWith(p+"/")){u.pathname=u.pathname.slice(p.length)||"/";return u.toString()}}catch{}return v;},set:function(v){return d.set.call(this,_rwAbs(v))},configurable:true});}const d2=Object.getOwnPropertyDescriptor(Location.prototype,"pathname");if(d2&&d2.set){Object.defineProperty(Location.prototype,"pathname",{get:function(){const v=d2.get.call(this);if(v===p||v===p+"/")return "/";if(v.startsWith(p+"/"))return v.slice(p.length)||"/";return v;},set:function(v){if(typeof v==="string"&&v.startsWith("/")&&!v.startsWith(p))v=p+v;return d2.set.call(this,v)},configurable:true});}const d3=Object.getOwnPropertyDescriptor(Location.prototype,"search");if(d3&&d3.get){Object.defineProperty(Location.prototype,"search",{get:function(){const v=d3.get.call(this);try{const u=new URL(location.href);if((u.pathname===p||u.pathname===p+"/"||u.pathname.startsWith(p+"/"))&&u.searchParams.get("raw")==="1"){const ps=new URLSearchParams(u.search);ps.delete("raw");const s=ps.toString();return s?"?"+s:"";}}catch{}return v;},set:function(v){return d3.set.call(this,v)},configurable:true});}const d4=Object.getOwnPropertyDescriptor(Location.prototype,"hash");if(d4&&d4.get){ /* keep */ }const d3=Object.getOwnPropertyDescriptor(Location.prototype,"search");if(d3&&d3.get){ /* keep as is */ }const _openWin=window.open;if(_openWin){window.open=function(u,n,f){if(typeof u==="string")u=_rwAbs(u);return _openWin.call(this,u,n,f)};}}catch{};try{if(location.pathname===p)history.replaceState(history.state,"",p+"/");}catch{};try{
+  const _setAttr=Element.prototype.setAttribute;
+  Element.prototype.setAttribute=function(n,v){
+    if(typeof v==="string"&&(n==="href"||n==="src"||n==="action"||n==="cite"||n==="data"||n==="poster"||n==="background"||n==="formaction"||n==="srcset"||n==="imagesrcset"||n==="icon"||n==="manifest")){
+      if(n==="srcset"||n==="imagesrcset"){
+        v=v.split(",").map(function(s){s=s.trim();var sp=s.split(/\s+/);if(sp[0].startsWith("/")&&!sp[0].startsWith(p)&&!sp[0].startsWith("/!tunnel=")&&!sp[0].startsWith("/!config")&&!sp[0].startsWith("//"))sp[0]=p+sp[0];return sp.join(" ")}).join(", ");
+      } else if(v.startsWith("/")&&!v.startsWith(p)&&!v.startsWith("/!tunnel=")&&!v.startsWith("/!config")&&!v.startsWith("//"))v=p+v;
+    }
+    return _setAttr.call(this,n,v);
+  };
+  new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      m.addedNodes.forEach(function(n){
+        if(n.nodeType!==1)return;
+        function fix(el){
+          var attrs=["href","src","action","cite","data","poster","background","formaction","icon","manifest"];
+          attrs.forEach(function(a){
+            if(el.hasAttribute&&el.hasAttribute(a)){
+              var v=el.getAttribute(a);
+              if(v&&v.startsWith("/")&&!v.startsWith(p)&&!v.startsWith("/!tunnel=")&&!v.startsWith("/!config")&&!v.startsWith("//"))el.setAttribute(a,p+v);
+            }
+          });
+          if(el.hasAttribute&&el.hasAttribute("srcset")){
+            var v=el.getAttribute("srcset");
+            if(v){
+              var nv=v.split(",").map(function(s){s=s.trim();var sp=s.split(/\s+/);if(sp[0].startsWith("/")&&!sp[0].startsWith(p))sp[0]=p+sp[0];return sp.join(" ")}).join(", ");
+              el.setAttribute("srcset",nv);
+            }
+          }
+          var st=el.getAttribute&&el.getAttribute("style");
+          if(st&&st.includes("url(/")){
+            el.setAttribute("style",st.replace(/url\(\s*(["']?)(\/(?!\/|!tunnel=|!config)[^"')]*)\1\s*\)/g,function(mm,q,path){return "url("+q+p+path+q+")"}));
+          }
+        }
+        fix(n);
+        if(n.querySelectorAll){
+          try{
+            n.querySelectorAll("[href^='/'],[src^='/'],[action^='/'],[cite^='/'],[data^='/']").forEach(fix);
+          }catch(e){}
+        }
+      });
+    });
+  }).observe(document.documentElement,{childList:true,subtree:true});
+}catch(e){}})();</script>`;
+                  // Rewrite all URL attributes for generic website support: href, src, action, cite, data, poster, background, formaction, etc.
+                  // Preserves original quote style and handles both quoted and unquoted absolute paths
+                  html = html.replace(/\b(href|src|action|srcset|imagesrcset|cite|data|poster|background|formaction|icon|manifest|archive|codebase|classid|usemap|profile)\s*=\s*(["'])\/(?!\/|!tunnel=|!config)/gi, (m, attr, q) => `${attr}=${q}${prefix}/`);
+                  html = html.replace(/\b(href|src|action|cite|data|poster|background|formaction)\s*=\s*\/(?!\/|!tunnel=|!config)([a-zA-Z0-9])/gi, (m, attr, first) => `${attr}="${prefix}/${first}`);
                   // srcset="/foo.png 1x, /bar.png 2x" -> srcset="/!tunnel=ks/foo.png ..."
                   html = html.replace(/srcset=(["'])([^"']+)\1/gi, (m: string, q: string, content: string) => {
                     let out2 = content;
@@ -2006,8 +2050,11 @@ export default {
                     out2 = out2.replace(new RegExp(prefix + "/" + prefix + "/", "g"), prefix + "/");
                     return `srcset=${q}${out2}${q}`;
                   });
-                  html = html.replace(/url\(\s*["']?\/(?!\/|!tunnel=|!config)/gi, `url("${prefix}/`);
-                  html = html.replace(/url\(\/(?!\/|!tunnel=|!config)/gi, `url(${prefix}/`);
+                  // Rewrite url() in inline styles and <style> tags, preserving quotes
+                  html = html.replace(/url\(\s*(["']?)(\/(?!\/|!tunnel=|!config)[^"')]*)\1\s*\)/gi, (m, q, path) => `url(${q}${prefix}${path}${q})`);
+                  // Also handle @import in <style> blocks
+                  html = html.replace(/@import\s+(["'])(\/(?!\/|!tunnel=|!config)[^"']+)\1/gi, (m, q, path) => `@import ${q}${prefix}${path}${q}`);
+                  html = html.replace(/@import\s+url\(\s*(["']?)(\/(?!\/|!tunnel=|!config)[^"')]+)\1\s*\)/gi, (m, q, path) => `@import url(${q}${prefix}${path}${q})`);
                   if (html.includes("<head>")) {
                     html = html.replace("<head>", `<head>${interceptor}`);
                   } else if (/<head[^>]*>/i.test(html)) {
