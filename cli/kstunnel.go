@@ -530,117 +530,14 @@ func wsServe(conn net.Conn, br *bufio.Reader, onText func(string)) error {
 // RunAgent holds the presence WSS connection open for hostID until ctx ends
 // or the browser denies it.
 //
-// It dials AgentWSURL(workerBase, hostID), heartbeats with {"type":"ping"},
-// and reconnects with backoff. While the decision is pending (including
-// unknown/missing = not decided yet) it keeps waiting — that is OK, not an
-// error. Log lines go to logf (nil = discard).
-//
-//   - Browser Allow  -> {"type":"decision","decision":"allowed"}  -> log + stay alive.
-//   - Browser Cancel -> {"type":"decision","decision":"denied"}   -> return ErrDenied (stop, no retry).
+// Historical alias for host mode: it now also auto-serves tunnels.
+// The worker pushes {"type":"tunnel-spec","tunnels":[...]} over this MAIN
+// WSS whenever you create/edit/delete a tunnel in the UI; RunAgent
+// (via RunHost) auto-opens per-tunnel data WSSs so you never need to run
+// `kstunnel --tunnel ...` manually. Kept for backward compat — new code
+// should call RunHost directly.
 func RunAgent(ctx context.Context, workerBase, hostID string, logf func(string, ...any)) error {
-	if logf == nil {
-		logf = func(string, ...any) {}
-	}
-	if !IsValidHostID(hostID) {
-		return fmt.Errorf("invalid host id %q", hostID)
-	}
-	wsURL, err := AgentWSURL(workerBase, hostID)
-	if err != nil {
-		return err
-	}
-	backoff := time.Second
-	allowedLogged := false
-	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		logf("connecting %s ...", wsURL)
-		conn, br, err := wsDial(wsURL)
-		if err != nil {
-			logf("connect failed: %v (retry in %s)", err, backoff)
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(backoff):
-			}
-			backoff = minDuration(30*time.Second, backoff*2)
-			continue
-		}
-		logf("wss connected (host %s) — green dot should show on the web UI", hostID)
-		backoff = time.Second
-
-		denyCh := make(chan struct{}, 1)
-		allowCh := make(chan struct{}, 4)
-		done := make(chan error, 1)
-		go func() {
-			done <- wsServe(conn, br, func(msg string) {
-				decision, ok := ParseDecisionMessage(msg)
-				if !ok {
-					// Presence broadcasts and pongs land here; keep quiet.
-					return
-				}
-				switch decision {
-				case DecisionDenied:
-					select {
-					case denyCh <- struct{}{}:
-					default:
-					}
-				case DecisionAllowed:
-					select {
-					case allowCh <- struct{}{}:
-					default:
-					}
-				default:
-					// pending = not decided yet = OK, keep waiting.
-				}
-			})
-		}()
-
-		ticker := time.NewTicker(25 * time.Second)
-		// Immediate hello ping so the DO sees traffic through proxies.
-		_ = wsWriteText(conn, `{"type":"ping"}`)
-		alive := true
-		for alive {
-			select {
-			case <-ctx.Done():
-				_ = wsWriteFrame(conn, 0x8, []byte{})
-				conn.Close()
-				ticker.Stop()
-				return ctx.Err()
-			case <-denyCh:
-				ticker.Stop()
-				_ = wsWriteFrame(conn, 0x8, []byte{})
-				conn.Close()
-				logf("canceled by browser — not saved (host %s)", hostID)
-				return ErrDenied
-			case <-allowCh:
-				if !allowedLogged {
-					allowedLogged = true
-					logf("allowed by browser — host %s saved, staying connected (Ctrl+C to stop)...", hostID)
-				}
-			case err := <-done:
-				if err != nil && err != io.EOF {
-					logf("connection lost: %v (reconnecting...)", err)
-				} else {
-					logf("connection closed (reconnecting...)")
-				}
-				alive = false
-			case <-ticker.C:
-				if err := wsWriteText(conn, `{"type":"ping"}`); err != nil {
-					logf("heartbeat failed: %v (reconnecting...)", err)
-					alive = false
-				}
-			}
-		}
-		ticker.Stop()
-		conn.Close()
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
-		}
-		backoff = minDuration(30*time.Second, backoff*2)
-	}
+	return RunHost(ctx, workerBase, hostID, logf)
 }
 
 func minDuration(a, b time.Duration) time.Duration {

@@ -18,8 +18,10 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "  --config:host    Generate a random host token, print the\n")
 	fmt.Fprintf(os.Stderr, "                   https://<worker>/!config?host=<random> Allow URL,\n")
-	fmt.Fprintf(os.Stderr, "                   then hold the MAIN WSS presence connection open\n")
-	fmt.Fprintf(os.Stderr, "                   (green dot on the web UI while connected).\n")
+	fmt.Fprintf(os.Stderr, "                   then hold the MAIN WSS open and AUTO-SERVE tunnels.\n")
+	fmt.Fprintf(os.Stderr, "                   After you Allow in the browser, any tunnel you add\n")
+	fmt.Fprintf(os.Stderr, "                   in the web UI is pushed via WSS (tunnel-spec) and\n")
+	fmt.Fprintf(os.Stderr, "                   the CLI auto-opens its tunnel WSS — no --tunnel needed.\n")
 	fmt.Fprintf(os.Stderr, "                   Aliases: --config-host, --config_host, --config.host\n")
 	fmt.Fprintf(os.Stderr, "  --host ID        Host id (the CLI token). Alias --token (ks-ssh-v2 compat).\n")
 	fmt.Fprintf(os.Stderr, "                   With --config:host it reuses\n")
@@ -333,14 +335,19 @@ func main() {
 		return
 	}
 
-	// Presence-only mode (--config:host): main wss only, wait for Allow/Cancel.
+	// Presence mode (--config:host): main WSS for Allow/Cancel + auto-serve tunnels.
+	// Holds ONE WSS (control) and the worker pushes {"type":"tunnel-spec",...}
+	// whenever you create/edit/delete a tunnel in the web UI. The CLI then
+	// auto-opens/closes per-tunnel data WSSs — no manual ` --tunnel ...` needed.
+	// This is the same as host mode, but also prints the Allow URL.
 	allowURL := cli.ConfigURL(workerBase, hostID)
 
 	fmt.Printf("Host: %s\n", hostID)
 	fmt.Printf("Open to allow: %s\n", allowURL)
 	fmt.Fprintf(os.Stderr, "Waiting for approval — keep this running (Ctrl+C to stop)...\n")
+	fmt.Fprintf(os.Stderr, "After Allow, create tunnels in the web UI — they will be served automatically via WSS (CF pushes tunnel-spec, CLI auto-opens tunnel WSS).\n")
 
-	if err := cli.RunAgent(ctx, workerBase, hostID, logf); err != nil && err != context.Canceled {
+	if err := cli.RunHost(ctx, workerBase, hostID, logf); err != nil && err != context.Canceled {
 		if errors.Is(err, cli.ErrDenied) {
 			fmt.Fprintf(os.Stderr, "Canceled by browser — host %s was not saved.\n", hostID)
 			os.Exit(1)
