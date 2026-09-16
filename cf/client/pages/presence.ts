@@ -168,23 +168,26 @@ async function tickRegistry() {
   notifyRegistry();
 }
 
+let registryVisBound = false;
 function ensureRegistryPolling(pollMs: number) {
   if (pollMs <= 0) return;
   // keep shortest requested interval
   if (registryTimer !== null && pollMs >= registryPollMs) return;
-  if (registryTimer !== null) window.clearInterval(registryTimer);
+  if (registryTimer !== null) clearInterval(registryTimer);
   registryPollMs = pollMs;
   const schedule = () => {
     if (document.visibilityState === "hidden") return; // pause when tab hidden
     registryTick++;
     void tickRegistry();
   };
-  registryTimer = window.setInterval(schedule, registryPollMs) as unknown as number;
-  // also resume on visibility change
-  const onVis = () => {
-    if (document.visibilityState === "visible") void tickRegistry();
-  };
-  document.addEventListener("visibilitychange", onVis, { once: false });
+  registryTimer = setInterval(schedule, registryPollMs) as unknown as number;
+  // also resume on visibility change — bind once
+  if (!registryVisBound) {
+    registryVisBound = true;
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void tickRegistry();
+    });
+  }
 }
 
 export function useRegistry(pollMs = 15000): {
@@ -211,7 +214,7 @@ export function useRegistry(pollMs = 15000): {
     return () => {
       registryListeners.delete(cb);
       if (registryListeners.size === 0 && registryTimer !== null) {
-        window.clearInterval(registryTimer);
+        clearInterval(registryTimer);
         registryTimer = null;
         registryTick = 0;
         registryAbort?.abort();
@@ -384,7 +387,7 @@ function startShared(host: string, entry: SharedEntry) {
     try {
       entry.ws = new WebSocket(watcherWSURL(host));
     } catch {
-      entry.retryTimer = window.setTimeout(connect, 5000) as unknown as number;
+      entry.retryTimer = setTimeout(connect, 5000) as unknown as number;
       return;
     }
     entry.ws.onmessage = (ev) => {
@@ -418,7 +421,7 @@ function startShared(host: string, entry: SharedEntry) {
     };
     entry.ws.onclose = () => {
       if (entry.cancelled) return;
-      entry.retryTimer = window.setTimeout(connect, 5000) as unknown as number;
+      entry.retryTimer = setTimeout(connect, 5000) as unknown as number;
     };
     entry.ws.onerror = () => {
       try {
@@ -431,8 +434,8 @@ function startShared(host: string, entry: SharedEntry) {
 
   void poll();
   connect();
-  entry.pollTimer = window.setInterval(poll, 7000) as unknown as number;
-  entry.pingTimer = window.setInterval(() => {
+  entry.pollTimer = setInterval(poll, 7000) as unknown as number;
+  entry.pingTimer = setInterval(() => {
     try {
       if (entry.ws && entry.ws.readyState === WebSocket.OPEN) entry.ws.send('{"type":"ping"}');
     } catch {
@@ -443,9 +446,9 @@ function startShared(host: string, entry: SharedEntry) {
 
 function stopShared(host: string, entry: SharedEntry) {
   entry.cancelled = true;
-  if (entry.pollTimer !== null) window.clearInterval(entry.pollTimer);
-  if (entry.pingTimer !== null) window.clearInterval(entry.pingTimer);
-  if (entry.retryTimer !== null) window.clearTimeout(entry.retryTimer);
+  if (entry.pollTimer !== null) clearInterval(entry.pollTimer);
+  if (entry.pingTimer !== null) clearInterval(entry.pingTimer);
+  if (entry.retryTimer !== null) clearTimeout(entry.retryTimer);
   entry.pollTimer = entry.pingTimer = entry.retryTimer = null;
   try {
     entry.ws?.close();
