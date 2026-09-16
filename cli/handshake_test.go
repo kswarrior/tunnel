@@ -15,10 +15,16 @@ import (
 	"time"
 )
 
-// startFakeAgentServer accepts ONE agent connection, performs the WS upgrade,
-// sends firstFrames (each as one server->client text frame), then holds the
-// socket open reading (and discarding) client frames until ctx ends.
-// It returns the ws:// base URL to pass as workerBase to RunAgent.
+// startFakeAgentServer accepts agent WSS plus registry spec polling.
+// It handles:
+//   GET /api/hosts/<id>/tunnels/spec -> {host,tunnels:[]} (so RunHost's
+//        initial fetch and 30s polls succeed), and
+//   WSS GET /api/agent/ws?host=...        -> 101 + firstFrames.
+//
+// Host mode (RunHost) does both: an initial HTTP spec fetch, then a WSS.
+// Older RunAgent only did WSS, but after the auto-serve fix RunAgent aliases
+// RunHost, so the fake must support the spec HTTP too. It loops Accept() so
+// multiple spec polls don't consume the single WSS slot.
 func startFakeAgentServer(t *testing.T, ctx context.Context, firstFrames []string) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -27,56 +33,107 @@ func startFakeAgentServer(t *testing.T, ctx context.Context, firstFrames []strin
 	}
 	go func() {
 		defer ln.Close()
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		br := bufio.NewReader(conn)
-		// Read HTTP upgrade request headers.
-		var key string
-		for {
-			line, err := br.ReadString('\n')
-			if err != nil {
-				return
-			}
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(strings.ToLower(trimmed), "sec-websocket-key:") {
-				key = strings.TrimSpace(trimmed[len("sec-websocket-key:"):])
-			}
-			if trimmed == "" {
-				break
-			}
-		}
-		accept := base64.StdEncoding.EncodeToString(sha1Sum(key + wsGUID))
-		fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
-		// Send scripted server->client text frames (unmasked).
-		for _, payload := range firstFrames {
-			b := []byte(payload)
-			if len(b) >= 126 {
-				t.Errorf("test payload too large")
-				return
-			}
-			if _, err := conn.Write([]byte{0x81, byte(len(b))}); err != nil {
-				return
-			}
-			if _, err := conn.Write(b); err != nil {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		// Hold open: discard client frames until test ctx ends.
-		_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-		buf := make([]byte, 4096)
+		// Track whether we've already served the WSS — firstFrames are sent
+		// only once, on the first websocket upgrade.
+		wsServed := false
 		for ctx.Err() == nil {
-			_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-			_, err := conn.Read(buf)
+			_ = ln.(*net.TCPListener).SetDeadline(time.Now().Add(500 * time.Millisecond))
+			conn, err := ln.Accept()
 			if err != nil {
 				if ne, ok := err.(net.Error); ok && ne.Timeout() {
 					continue
 				}
 				return
 			}
+			br := bufio.NewReader(conn)
+			// Read request line.
+			reqLine, err := br.ReadString('\n')
+			if err != nil {
+				conn.Close()
+				continue
+			}
+			parts := strings.Fields(reqLine)
+			path := ""
+			if len(parts) >= 2 {
+				path = parts[1]
+			}
+			// Read headers.
+			var key string
+			headerLines := []string{}
+			for {
+				line, err := br.ReadString('\n')
+				if err != nil {
+					break
+				}
+				trimmed := strings.TrimSpace(line)
+				headerLines = append(headerLines, trimmed)
+				if strings.HasPrefix(strings.ToLower(trimmed), "sec-websocket-key:") {
+					key = strings.TrimSpace(trimmed[len("sec-websocket-key:"):])
+				}
+				if trimmed == "" {
+					break
+				}
+			}
+			isWS := false
+			for _, h := range headerLines {
+				if strings.EqualFold(h, "upgrade: websocket") || strings.HasPrefix(strings.ToLower(h), "upgrade: websocket") {
+					isWS = true
+				}
+			}
+			// Registry spec poll: GET /api/hosts/<id>/tunnels/spec
+			if strings.Contains(path, "/tunnels/spec") && !isWS {
+				body := `{"host":"abcde","tunnels":[]}`
+				fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
+				conn.Close()
+				continue
+			}
+			if !isWS && key == "" {
+				// Not a websocket nor spec poll — 404.
+				fmt.Fprintf(conn, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+				conn.Close()
+				continue
+			}
+			// WebSocket upgrade.
+			if wsServed {
+				// Only one WSS is expected per test; extra upgrades get 409.
+				fmt.Fprintf(conn, "HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n")
+				conn.Close()
+				continue
+			}
+			wsServed = true
+			accept := base64.StdEncoding.EncodeToString(sha1Sum(key + wsGUID))
+			fmt.Fprintf(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
+			// Send scripted server->client text frames (unmasked).
+			go func(c net.Conn, br *bufio.Reader) {
+				defer c.Close()
+				for _, payload := range firstFrames {
+					b := []byte(payload)
+					if len(b) >= 126 {
+						t.Errorf("test payload too large")
+						return
+					}
+					if _, err := c.Write([]byte{0x81, byte(len(b))}); err != nil {
+						return
+					}
+					if _, err := c.Write(b); err != nil {
+						return
+					}
+					time.Sleep(50 * time.Millisecond)
+				}
+				// Hold open: discard client frames until test ctx ends.
+				_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
+				buf := make([]byte, 4096)
+				for ctx.Err() == nil {
+					_ = c.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+					_, err := c.Read(buf)
+					if err != nil {
+						if ne, ok := err.(net.Error); ok && ne.Timeout() {
+							continue
+						}
+						return
+					}
+				}
+			}(conn, br)
 		}
 	}()
 	return "http://" + ln.Addr().String()
