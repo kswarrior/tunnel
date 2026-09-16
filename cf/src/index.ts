@@ -1030,12 +1030,12 @@ function tunnelStatusPage(opts: {
     "<main>\n" +
     `<p class="kicker">KS Tunnel · <code>${escHtml(pathShown)}</code></p>\n` +
     `<h1><span class="spin"></span>${escHtml(heading)}</h1>\n` +
+    '<p class="muted">Waiting for the tunnel — this page reloads itself when it is live. Live log:</p>\n' +
+    '<pre id="log"></pre>\n' +
     `<p>${escHtml(intro)}</p>\n` +
     `<ul>${factsHtml}</ul>\n` +
     "<p>Run on the host machine and keep it running:</p>\n" +
     `<pre class="cmd">${escHtml(cliCmd)}</pre>\n` +
-    '<p class="muted">Waiting for the tunnel — this page reloads itself when it is live. Live log:</p>\n' +
-    '<pre id="log"></pre>\n' +
     "</main>\n" +
     "<script>\n" +
     `var SLUG = ${JSON.stringify(slug)};\n` +
@@ -1195,12 +1195,12 @@ async function tunnelLoadingWrapperResponse(
     "<main>\n" +
     `<p class="kicker">KS Tunnel · <code>${escHtml(shown)}</code> → <code>${escHtml(entry.target)}</code></p>\n` +
     `<h1><span class="spin"></span>Loading tunnel — checking agent and port…</h1>\n` +
+    '<p class="muted">Live log (auto-checks every 2.5s, redirects to port view when ready):</p>\n' +
+    '<pre id="log"></pre>\n' +
     `<p>Checking if host <code>${escHtml(entry.host)}</code> is online and tunnel <code>${escHtml(entry.slug)}</code> is live. This page verifies the agent and port, then shows the port view.</p>\n` +
     `<ul>${htmlFacts}</ul>\n` +
     `<p>CLI must be running:</p>\n` +
     `<pre class="cmd">${escHtml(cliCmd)}\n# or host mode: kstunnel --host ${escHtml(entry.host)}</pre>\n` +
-    '<p class="muted">Live log (auto-checks every 2.5s, redirects to port view when ready):</p>\n' +
-    '<pre id="log"></pre>\n' +
     `<p class="muted">If this stays here, the tunnel is offline or not published. <a href="${escHtml(shown)}?raw=1">Skip check and show port directly (raw)</a> · <a href="javascript:location.reload()">Retry</a></p>\n` +
     "</main>\n" +
     "<script>\n" +
