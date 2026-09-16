@@ -1128,6 +1128,114 @@ function tunnelNotPublishedResponse(request: Request, slug: string, pathShown?: 
   });
 }
 
+/** Loading wrapper for /!tunnel=<slug> — checks agent + port before showing port view. */
+async function tunnelLoadingWrapperResponse(
+  request: Request,
+  env: Env,
+  entry: TunnelEntry,
+  pathShown?: string,
+): Promise<Response> {
+  const shown = pathShown ?? `/${entry.slug}`;
+  const presence = await presenceSnapshot(env, entry.host);
+  const live = presence?.tunnels ?? [];
+  const facts = [
+    `slug /${entry.slug} → target ${entry.target} (host ${entry.host})`,
+    presence
+      ? `host ${entry.host}: online=${presence.online} agents=${presence.agents} live tunnels=[${live.join(", ") || "none"}]`
+      : `host ${entry.host}: checking…`,
+    `checking agent and port before showing port view…`,
+  ];
+  const text = `Loading tunnel ${shown} — checking agent ${entry.host} and target ${entry.target}…`;
+  if (!wantsHtmlPage(request)) {
+    // Non-HTML clients (curl, fetch) get direct proxy — don't wrap.
+    // Return null signal is not useful; caller should bypass wrapper.
+    // We return a simple 200 text to indicate loading, but the caller
+    // will handle direct proxy instead. This function is only called for HTML.
+    return new Response(text, {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+  const cliCmd = `kstunnel --host ${entry.host} --tunnel ${entry.slug} --target ${entry.target}`;
+  const htmlFacts = facts.map((f) => `<li>${escHtml(f)}</li>`).join("");
+  const seedLog = facts.map((f) => `• ${f}`).join("\n");
+  // Build raw URL for the actual port view (bypass wrapper). Preserve
+  // existing query + hash, append raw=1 so worker directly proxies.
+  const html =
+    "<!doctype html>\n" +
+    '<html lang="en">\n' +
+    "<head>\n" +
+    '<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+    `<title>${escHtml(shown)} — Loading tunnel · KS Tunnel</title>\n` +
+    "<style>\n" +
+    "body{font-family:system-ui,-apple-system,sans-serif;background:#0f141b;color:#e6ebf2;margin:0;padding:32px 16px}\n" +
+    "main{max-width:640px;margin:0 auto}\n" +
+    ".kicker{color:#8b98ab;font-size:13px}\n" +
+    "code,.cmd{font-family:ui-monospace,monospace}\n" +
+    ".cmd{background:#1a2230;border:1px solid #2c3a52;border-radius:8px;padding:12px;white-space:pre-wrap}\n" +
+    "ul{background:#1a2230;border:1px solid #2c3a52;border-radius:8px;padding:12px 12px 12px 32px}\n" +
+    "#log{background:#0a0e14;border:1px solid #2c3a52;border-radius:8px;padding:12px;height:220px;overflow-y:auto;white-space:pre-wrap;font-size:12px}\n" +
+    ".spin{display:inline-block;width:14px;height:14px;border:2px solid #2c3a52;border-top-color:#4da3ff;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}\n" +
+    "@keyframes sp{to{transform:rotate(360deg)}}\n" +
+    ".muted{color:#8b98ab}\n" +
+    "a{color:#4da3ff}\n" +
+    "</style>\n" +
+    "</head>\n" +
+    "<body>\n" +
+    "<main>\n" +
+    `<p class="kicker">KS Tunnel · <code>${escHtml(shown)}</code> → <code>${escHtml(entry.target)}</code></p>\n` +
+    `<h1><span class="spin"></span>Loading tunnel — checking agent and port…</h1>\n` +
+    `<p>Checking if host <code>${escHtml(entry.host)}</code> is online and tunnel <code>${escHtml(entry.slug)}</code> is live. This page verifies the agent and port, then shows the port view.</p>\n` +
+    `<ul>${htmlFacts}</ul>\n` +
+    `<p>CLI must be running:</p>\n` +
+    `<pre class="cmd">${escHtml(cliCmd)}\n# or host mode: kstunnel --host ${escHtml(entry.host)}</pre>\n` +
+    '<p class="muted">Live log (auto-checks every 2.5s, redirects to port view when ready):</p>\n' +
+    '<pre id="log"></pre>\n' +
+    `<p class="muted">If this stays here, the tunnel is offline or not published. <a href="${escHtml(shown)}?raw=1">Skip check and show port directly (raw)</a> · <a href="javascript:location.reload()">Retry</a></p>\n` +
+    "</main>\n" +
+    "<script>\n" +
+    `var SLUG = ${JSON.stringify(entry.slug)};\n` +
+    `var HOST = ${JSON.stringify(entry.host)};\n` +
+    `var TARGET = ${JSON.stringify(entry.target)};\n` +
+    `var SHOWN = ${JSON.stringify(shown)};\n` +
+    "var n = 0;\n" +
+    'var el = document.getElementById("log");\n' +
+    `el.textContent = ${JSON.stringify(seedLog)} + "\\n";\n` +
+    "function log(s){ var t=new Date().toLocaleTimeString(); el.textContent += \"[\"+t+\"] \"+s+\"\\n\"; el.scrollTop=el.scrollHeight; }\n" +
+    "function rawUrl(){ var u = new URL(window.location.href); if(u.searchParams.has('raw')) return u.toString(); u.searchParams.set('raw','1'); return u.toString(); }\n" +
+    "var check = async function(){\n" +
+    "  n++;\n" +
+    "  try {\n" +
+    '    var reg = await fetch("/api/tunnels/" + encodeURIComponent(SLUG), {cache:"no-store"}).then(function(r){ return r.json().catch(function(){ return null; }); });\n' +
+    "    var published = !!(reg && reg.host);\n" +
+    '    log("check #"+n+": registry "+(published ? "published host="+reg.host+" target="+reg.target : "not published")); \n' +
+    "    if(!published){ log(\"waiting for publish — re-save tunnel in UI\"); return false; }\n" +
+    '    var st = await fetch("/api/hosts/" + encodeURIComponent(HOST) + "/status", {cache:"no-store"}).then(function(r){ return r.json().catch(function(){ return null; }); });\n' +
+    "    var online = !!(st && st.online);\n" +
+    "    var live = st && Array.isArray(st.tunnels) ? st.tunnels : [];\n" +
+    '    log("host "+HOST+" online="+online+" agents="+(st?st.agents:"?")+" live=["+live.join(", ")+"]");\n' +
+    "    if(online && live.indexOf(SLUG) !== -1){ log(\"tunnel live — loading port view \"+TARGET+\"…\"); setTimeout(function(){ window.location.replace(rawUrl()); }, 800); return true; }\n" +
+    '    log("tunnel not live yet — keep CLI running: kstunnel --host "+HOST+" --tunnel "+SLUG+" --target "+TARGET);\n' +
+    "  } catch(e){ log(\"check #\"+n+\": error \"+(e&&e.message?e.message:e)); }\n" +
+    "  return false;\n" +
+    "};\n" +
+    "(async function(){\n" +
+    '  log("checking agent and port…");\n' +
+    "  // First quick check, then poll\n" +
+    "  if(await check()) return;\n" +
+    "  for(var i=0;i<240;i++){ await new Promise(function(r){ setTimeout(r,2500); }); if(await check()) return; }\n" +
+    '  log("stopped auto-checks — tunnel still offline. Keep CLI running and press Retry.");\n' +
+    "})();\n" +
+    "</script>\n" +
+    "</body>\n" +
+    "</html>\n";
+  return new Response(html, {
+    status: 200,
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Fallback Allow page: served for /!config?host=ID when the frontend assets
 // binding is unavailable. Same job as the React ConfigHost page (show agent
@@ -1650,7 +1758,19 @@ export default {
             entry = null;
           }
           if (entry && entry.host) {
-            const targetPath = rest + url.search;
+            // Browser HTML gets a loading wrapper that verifies agent + port
+            // before showing the port view (helps debug "home page not port").
+            // The wrapper polls /api/tunnels/:slug and /api/hosts/:id/status
+            // then redirects to ?raw=1 for the actual bytes. Non-HTML/curl
+            // and ?raw=1 bypass the wrapper and proxy directly.
+            if (isNewForm && wantsHtmlPage(request) && !url.searchParams.has("raw") && request.method === "GET") {
+              return await tunnelLoadingWrapperResponse(request, env, entry, pathShown);
+            }
+            // Strip wrapper's ?raw=1 so upstream sees the real path.
+            const rawSearch = new URLSearchParams(url.search);
+            rawSearch.delete("raw");
+            const cleanSearch = rawSearch.toString() ? "?" + rawSearch.toString() : "";
+            const targetPath = rest + cleanSearch;
             // Read visitor body (if any) for POST/PUT/etc.
             let bodyBase64 = "";
             if (request.method !== "GET" && request.method !== "HEAD") {
