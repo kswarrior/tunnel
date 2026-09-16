@@ -1898,12 +1898,12 @@ export default {
                   const interceptor = `<script>(function(){const p="${prefix}";function _rw(u){if(typeof u!=="string")return u;if(u.startsWith(p)||u.startsWith("/!tunnel=")||u.startsWith("/!config")||u.startsWith("//")||u.startsWith("http://")||u.startsWith("https://")||u.startsWith("data:")||u.startsWith("blob:"))return u;if(u.startsWith("/"))return p+u;return u}const _fetch=window.fetch;window.fetch=function(i,init){if(typeof i==="string"){i=_rw(i)}else if(i instanceof Request){const url=i.url;try{const u=new URL(url,location.origin);if(u.origin===location.origin&&u.pathname.startsWith("/")&&!u.pathname.startsWith(p)){u.pathname=p+u.pathname;i=new Request(u.toString(),i)}}catch{}}return _fetch.call(this,i,init)};const _open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,url){if(typeof url==="string")url=_rw(url);return _open.apply(this,[m,url,...Array.prototype.slice.call(arguments,2)])};const _WS=window.WebSocket;window.WebSocket=function(url,protocols){if(typeof url==="string"){if(url.startsWith("/"))url=_rw(url);else{try{const u=new URL(url,location.href);if(u.pathname.startsWith("/")&&!u.pathname.startsWith(p))u.pathname=p+u.pathname,url=u.toString()}catch{}}}return protocols?new _WS(url,protocols):new _WS(url)};const _ES=new EventSource;window.EventSource=function(url,opts){if(typeof url==="string")url=_rw(url);return new _ES(url,opts)};})();</script>`;
                   // Rewrite absolute href/src/action and CSS url()
                   // href="/assets/..." -> href="/!tunnel=ks/assets/..."
-                  html = html.replace(/(href|src|action)=["']\/(?!\/|!tunnel=|!config)/gi, (m, attr) => `${attr}="${prefix}/`);
+                  html = html.replace(/(href|src|action)=["']\/(?!\/|!tunnel=|!config)/gi, (m: string, attr: string) => `${attr}="${prefix}/`);
                   // srcset="/foo.png 1x, /bar.png 2x" -> srcset="/!tunnel=ks/foo.png ..."
-                  html = html.replace(/srcset=(["'])([^"']+)\1/gi, (m, q, content) => {
+                  html = html.replace(/srcset=(["'])([^"']+)\1/gi, (m: string, q: string, content: string) => {
                     let out2 = content;
                     out2 = out2.replace(/,\s*\//g, `, ${prefix}/`);
-                    out2 = out2.replace(/(^|\s)\//g, (mm, p1) => `${p1}${prefix}/`);
+                    out2 = out2.replace(/(^|\s)\//g, (mm: string, p1: string) => `${p1}${prefix}/`);
                     // Remove double rewrite if already prefixed
                     out2 = out2.replace(new RegExp(prefix + "/" + prefix + "/", "g"), prefix + "/");
                     return `srcset=${q}${out2}${q}`;
