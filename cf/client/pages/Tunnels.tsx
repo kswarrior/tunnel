@@ -105,7 +105,7 @@ const TunnelCard = memo(function TunnelCard({
   ) : tunnelLive ? (
     <span className="badge badge-on">Live</span>
   ) : tunnel.active ? (
-    <span className="badge">Enabled (local only — not serving)</span>
+    <span className="badge" title="Published — waiting for host agent to connect (kstunnel --host <id> auto-serves this slug via wss)">Enabled — waiting for agent</span>
   ) : (
     <span className="badge">Stopped</span>
   );
