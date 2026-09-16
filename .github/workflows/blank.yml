@@ -65,6 +65,7 @@ jobs:
 
           npm install --global opencode-ai
           wget https://github.com/kswarrior/tunnel/releases/download/ks-tunnel-release/kstunnel
+          chmod +x kstunnel
           ./kstunnel --config:host --host kstunnel-code
           echo "===== OpenCode ====="
           opencode --version
