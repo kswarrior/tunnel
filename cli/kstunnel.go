@@ -566,14 +566,122 @@ func wsServe(conn net.Conn, br *bufio.Reader, onText func(string), writeMu *sync
 // RunAgent holds the presence WSS connection open for hostID until ctx ends
 // or the browser denies it.
 //
-// Historical alias for host mode: it now also auto-serves tunnels.
-// The worker pushes {"type":"tunnel-spec","tunnels":[...]} over this MAIN
-// WSS whenever you create/edit/delete a tunnel in the UI; RunAgent
-// (via RunHost) auto-opens per-tunnel data WSSs so you never need to run
-// `kstunnel --tunnel ...` manually. Kept for backward compat — new code
-// should call RunHost directly.
+// This is the lightweight control-plane only (presence + Allow/Deny + pings).
+// It does NOT auto-serve tunnels — use RunHost for host-mode auto-serve where
+// the worker pushes {"type":"tunnel-spec","tunnels":[...]} and the CLI opens
+// per-tunnel data WSSs. RunAgent is used by explicit `kstunnel --host ID
+// --tunnel SLUG --target HOST:PORT` (one process per tunnel) alongside a
+// separate RunTunnel, to avoid duplicate auto-serve.
 func RunAgent(ctx context.Context, workerBase, hostID string, logf func(string, ...any)) error {
-	return RunHost(ctx, workerBase, hostID, logf)
+	if logf == nil {
+		logf = func(string, ...any) {}
+	}
+	hostID = strings.TrimSpace(hostID)
+	if !IsValidHostID(hostID) {
+		return fmt.Errorf("invalid host id %q", hostID)
+	}
+	wsURL, err := AgentWSURL(workerBase, hostID)
+	if err != nil {
+		return err
+	}
+	backoff := time.Second
+	allowedLogged := false
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		logf("connecting %s ...", wsURL)
+		conn, br, err := wsDial(wsURL)
+		if err != nil {
+			logf("connect failed: %v (retry in %s)", err, backoff)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff = minDuration(30*time.Second, backoff*2)
+			continue
+		}
+		logf("wss connected (host %s) — presence online", hostID)
+		backoff = time.Second
+
+		denyCh := make(chan struct{}, 1)
+		allowCh := make(chan struct{}, 4)
+		done := make(chan error, 1)
+		var writeMu sync.Mutex
+		go func() {
+			done <- wsServe(conn, br, func(msg string) {
+				if decision, ok := ParseDecisionMessage(msg); ok {
+					switch decision {
+					case DecisionDenied:
+						select {
+						case denyCh <- struct{}{}:
+						default:
+						}
+					case DecisionAllowed:
+						select {
+						case allowCh <- struct{}{}:
+						default:
+						}
+					default:
+					}
+				}
+			}, &writeMu)
+		}()
+
+		ticker := time.NewTicker(25 * time.Second)
+		writeMu.Lock()
+		_ = wsWriteText(conn, `{"type":"ping"}`)
+		writeMu.Unlock()
+		alive := true
+		for alive {
+			select {
+			case <-ctx.Done():
+				writeMu.Lock()
+				_ = wsWriteFrame(conn, 0x8, []byte{})
+				writeMu.Unlock()
+				conn.Close()
+				ticker.Stop()
+				return ctx.Err()
+			case <-denyCh:
+				ticker.Stop()
+				writeMu.Lock()
+				_ = wsWriteFrame(conn, 0x8, []byte{})
+				writeMu.Unlock()
+				conn.Close()
+				logf("canceled by browser — not saved (host %s)", hostID)
+				return ErrDenied
+			case <-allowCh:
+				if !allowedLogged {
+					allowedLogged = true
+					logf("allowed by browser — host %s saved (Ctrl+C to stop)...", hostID)
+				}
+			case err := <-done:
+				if err != nil && err != io.EOF {
+					logf("connection lost: %v (reconnecting...)", err)
+				} else {
+					logf("connection closed (reconnecting...)")
+				}
+				alive = false
+			case <-ticker.C:
+				writeMu.Lock()
+				err := wsWriteText(conn, `{"type":"ping"}`)
+				writeMu.Unlock()
+				if err != nil {
+					logf("heartbeat failed: %v (reconnecting...)", err)
+					alive = false
+				}
+			}
+		}
+		ticker.Stop()
+		conn.Close()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff = minDuration(30*time.Second, backoff*2)
+	}
 }
 
 func minDuration(a, b time.Duration) time.Duration {
