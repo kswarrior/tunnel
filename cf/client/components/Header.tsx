@@ -65,6 +65,7 @@ export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
           </g>
         </svg>
         <span>KS Tunnel</span>
+        <span className="brand-sub">KS Warrior</span>
       </div>
       <div className="header-spacer" />
     </header>

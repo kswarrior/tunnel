@@ -18,6 +18,7 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
         <div>
           <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
             Home
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#0f9d58", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.14)", padding: "3px 8px", borderRadius: 999 }}>KS Warrior</span>
           </h1>
         </div>
         <button type="button" className="btn" onClick={onRefresh} disabled={status.loading} style={{ alignSelf: "center" }}>

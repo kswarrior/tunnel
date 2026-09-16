@@ -1028,7 +1028,7 @@ function tunnelStatusPage(opts: {
     "</head>\n" +
     "<body>\n" +
     "<main>\n" +
-    `<p class="kicker">KS Tunnel · <code>${escHtml(pathShown)}</code></p>\n` +
+    `<p class="kicker"><span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f9d58;background:rgba(16,185,129,0.10);border:1px solid rgba(16,185,129,0.14);padding:3px 8px;border-radius:999px;margin-right:8px">KS Warrior</span>KS Tunnel · <code>${escHtml(pathShown)}</code></p>\n` +
     `<h1><span class="spin"></span>${escHtml(heading)}</h1>\n` +
     '<p class="muted">Waiting for the tunnel — this page reloads itself when it is live. Live log:</p>\n' +
     '<pre id="log"></pre>\n' +
@@ -1193,7 +1193,7 @@ async function tunnelLoadingWrapperResponse(
     "</head>\n" +
     "<body>\n" +
     "<main>\n" +
-    `<p class="kicker">KS Tunnel · <code>${escHtml(shown)}</code> → <code>${escHtml(entry.target)}</code></p>\n` +
+    `<p class="kicker"><span style="display:inline-block;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f9d58;background:rgba(16,185,129,0.10);border:1px solid rgba(16,185,129,0.14);padding:3px 8px;border-radius:999px;margin-right:8px">KS Warrior</span>KS Tunnel · <code>${escHtml(shown)}</code> → <code>${escHtml(entry.target)}</code></p>\n` +
     `<h1><span class="spin"></span>Loading tunnel — checking agent and port…</h1>\n` +
     '<p class="muted">Live log (auto-checks every 2.5s, redirects to port view when ready):</p>\n' +
     '<pre id="log"></pre>\n' +
