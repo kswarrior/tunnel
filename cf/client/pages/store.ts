@@ -16,11 +16,38 @@ function read<T>(key: string): T[] {
   }
 }
 
+const pendingWrites = new Map<string, unknown>();
+let writeTimer: number | null = null;
+
+function flushWrites() {
+  writeTimer = null;
+  for (const [key, value] of pendingWrites) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // storage unavailable
+    }
+  }
+  pendingWrites.clear();
+}
+
 function write(key: string, value: unknown): void {
+  pendingWrites.set(key, value);
+  if (writeTimer !== null) return;
+  // batch writes to next frame — avoids blocking scroll/input
+  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+    writeTimer = (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(flushWrites) as unknown as number;
+  } else {
+    writeTimer = window.setTimeout(flushWrites, 0);
+  }
+}
+
+function writeSync(key: string, value: unknown): void {
+  // used on init / dedupe to persist immediately without batch delay
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // storage unavailable — keep in-memory state only
+    // ignore
   }
 }
 
@@ -64,16 +91,16 @@ function useCollection<T extends { id: string }>(
   const isDuplicate = opts?.isDuplicate;
   const [items, setItems] = useState<T[]>(() => {
     let initial = read<T>(key);
-    if (opts?.heal) {
+      if (opts?.heal) {
       const healed = initial.map((r) => opts.heal!(r));
       if (opts.needsHeal && healed.some((h, i) => opts.needsHeal!(initial[i], h))) {
-        write(key, healed);
+        writeSync(key, healed);
         initial = healed;
       } else if (!opts.needsHeal) {
         // Persist shape upgrades best-effort (compare by JSON).
         try {
           if (JSON.stringify(initial) !== JSON.stringify(healed)) {
-            write(key, healed);
+            writeSync(key, healed);
             initial = healed;
           }
         } catch {
@@ -88,7 +115,7 @@ function useCollection<T extends { id: string }>(
     for (const item of initial) {
       if (!deduped.some((h) => h.id === item.id || isDuplicate(h, item))) deduped.push(item);
     }
-    if (deduped.length !== initial.length) write(key, deduped);
+    if (deduped.length !== initial.length) writeSync(key, deduped);
     return deduped;
   });
 

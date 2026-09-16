@@ -149,7 +149,7 @@ const HostCard = memo(function HostCard({
       ]}
     />
   );
-}
+});
 
 export function HostsPage({ hosts, tunnels, onAdd, onUpdate, onRemove }: HostsPageProps) {
   const [adding, setAdding] = useState(false);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export const CONFIG_HOST_RE = /^[A-Za-z0-9_-]{5,64}$/;
 
@@ -131,8 +131,8 @@ export type RegistryEntry = {
 };
 
 /** Worker-side slug registry (source of truth for what /<slug> resolves). */
-export async function fetchRegistry(): Promise<RegistryEntry[]> {
-  const res = await fetch("/api/tunnels", { cache: "no-store" });
+export async function fetchRegistry(signal?: AbortSignal): Promise<RegistryEntry[]> {
+  const res = await fetch("/api/tunnels", { cache: "no-store", signal });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = (await res.json()) as { tunnels?: unknown };
   if (!Array.isArray(data.tunnels)) return [];
@@ -141,45 +141,89 @@ export async function fetchRegistry(): Promise<RegistryEntry[]> {
   );
 }
 
-export function useRegistry(pollMs = 10000): {
+// Shared registry cache — one poll loop no matter how many callers.
+type RegistryListener = (s: { entries: RegistryEntry[]; loading: boolean; error: string | null }) => void;
+let registryState: { entries: RegistryEntry[]; loading: boolean; error: string | null } = { entries: [], loading: true, error: null };
+let registryListeners = new Set<RegistryListener>();
+let registryTimer: number | null = null;
+let registryAbort: AbortController | null = null;
+let registryPollMs = 15000;
+let registryTick = 0;
+
+function notifyRegistry() {
+  for (const l of registryListeners) l(registryState);
+}
+
+async function tickRegistry() {
+  registryAbort?.abort();
+  registryAbort = new AbortController();
+  try {
+    const list = await fetchRegistry(registryAbort.signal);
+    if (registryAbort.signal.aborted) return;
+    registryState = { entries: list, loading: false, error: null };
+  } catch (err: unknown) {
+    if (registryAbort.signal.aborted) return;
+    registryState = { ...registryState, loading: false, error: err instanceof Error ? err.message : "Registry unreachable" };
+  }
+  notifyRegistry();
+}
+
+function ensureRegistryPolling(pollMs: number) {
+  if (pollMs <= 0) return;
+  // keep shortest requested interval
+  if (registryTimer !== null && pollMs >= registryPollMs) return;
+  if (registryTimer !== null) window.clearInterval(registryTimer);
+  registryPollMs = pollMs;
+  const schedule = () => {
+    if (document.visibilityState === "hidden") return; // pause when tab hidden
+    registryTick++;
+    void tickRegistry();
+  };
+  registryTimer = window.setInterval(schedule, registryPollMs) as unknown as number;
+  // also resume on visibility change
+  const onVis = () => {
+    if (document.visibilityState === "visible") void tickRegistry();
+  };
+  document.addEventListener("visibilitychange", onVis, { once: false });
+}
+
+export function useRegistry(pollMs = 15000): {
   entries: RegistryEntry[];
   loading: boolean;
   error: string | null;
   refresh: () => void;
 } {
-  const [entries, setEntries] = useState<RegistryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
+  const [snap, setSnap] = useState(registryState);
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetchRegistry()
-      .then((list) => {
-        if (cancelled) return;
-        setEntries(list);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Registry unreachable");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    // initial fetch if empty
+    if (registryTick === 0) {
+      registryTick = 1;
+      registryState = { ...registryState, loading: true };
+      void tickRegistry();
+    } else {
+      // sync existing cache immediately
+      setSnap(registryState);
+    }
+    const cb: RegistryListener = (s) => setSnap(s);
+    registryListeners.add(cb);
+    ensureRegistryPolling(pollMs);
     return () => {
-      cancelled = true;
+      registryListeners.delete(cb);
+      if (registryListeners.size === 0 && registryTimer !== null) {
+        window.clearInterval(registryTimer);
+        registryTimer = null;
+        registryTick = 0;
+        registryAbort?.abort();
+      }
     };
-  }, [tick]);
-
-  useEffect(() => {
-    if (pollMs <= 0) return;
-    const timer = window.setInterval(() => setTick((t) => t + 1), pollMs);
-    return () => window.clearInterval(timer);
   }, [pollMs]);
 
-  return { entries, loading, error, refresh: () => setTick((t) => t + 1) };
+  const refresh = useCallback(() => {
+    void tickRegistry();
+  }, []);
+
+  return { entries: snap.entries, loading: snap.loading, error: snap.error, refresh };
 }
 
 export type PresenceState = {
