@@ -32,3 +32,6 @@ new_sqlite_classes = ["HostPresence"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["TunnelRegistry"]
+
+[dev]
+port = 8080
