@@ -1882,6 +1882,46 @@ export default {
             for (const [k, v] of Object.entries(payload.headers ?? {})) {
               const lk = k.toLowerCase();
               if (lk === "content-length" || lk === "transfer-encoding" || lk === "connection") continue;
+              // Strip CSP that would block our injected fetch interceptor (inline <script>)
+              if (lk === "content-security-policy" || lk === "content-security-policy-report-only" || lk === "x-content-security-policy" || lk === "x-webkit-csp") continue;
+              if (lk === "x-frame-options") continue;
+              // Rewrite redirects so absolute Location like "/" or "http://127.0.0.1:7070/..." becomes "/!tunnel=slug/..."
+              if (lk === "location" || lk === "content-location" || lk === "link") {
+                let loc = String(v);
+                const prefix = `/!tunnel=${entry.slug}`;
+                try {
+                  if (loc.startsWith("/")) {
+                    if (!loc.startsWith(prefix) && !loc.startsWith("/!tunnel=") && !loc.startsWith("/!config") && !loc.startsWith("//")) {
+                      loc = prefix + loc;
+                    }
+                  } else if (/^https?:\/\//i.test(loc)) {
+                    try {
+                      const u = new URL(loc);
+                      // If Location points back to the local target (e.g. http://127.0.0.1:7070/foo) rewrite to tunnel path
+                      const targetHost = entry.target.split("/")[0];
+                      if (u.host === targetHost || loc.includes(targetHost)) {
+                        loc = prefix + u.pathname + u.search + u.hash;
+                      }
+                    } catch {}
+                  }
+                } catch {}
+                try { outHeaders.set(k, loc); } catch {}
+                continue;
+              }
+              if (lk === "set-cookie") {
+                // Scope cookie to tunnel path: Path=/ -> Path=/!tunnel=slug/
+                let cookie = String(v);
+                const prefix = `/!tunnel=${entry.slug}`;
+                cookie = cookie.replace(/;\s*Path=\//gi, `; Path=${prefix}/`);
+                // Multiple cookies may be comma-joined into one string — try to split and append separately
+                try {
+                  // Use append so multiple Set-Cookie headers survive (Headers.set would dedup)
+                  outHeaders.append(k, cookie);
+                } catch {
+                  try { outHeaders.set(k, cookie); } catch {}
+                }
+                continue;
+              }
               try {
                 outHeaders.set(k, String(v));
               } catch {
@@ -1906,16 +1946,42 @@ export default {
             const isJs = typeof ct === "string" && (ct.toLowerCase().includes("application/javascript") || ct.toLowerCase().includes("text/javascript") || ct.toLowerCase().includes("application/x-javascript"));
             const shouldRewriteHtml = isHtml && bodyBytes.length > 0 && status === 200 && request.method === "GET";
             const shouldRewriteCss = isCss && bodyBytes.length > 0 && status === 200 && request.method === "GET";
-            // Rewrite CSS url() references even for CSS files proxied via tunnel.
+            // Rewrite CSS url() and @import references for tunnel (preserves quotes, supports all websites)
             if (shouldRewriteCss) {
               try {
                 let css = new TextDecoder().decode(bodyBytes);
                 const prefix = `/!tunnel=${entry.slug}`;
                 if (!css.includes(prefix + "/")) {
-                  css = css.replace(/url\(\s*["']?\/(?!\/|!tunnel=|!config)/gi, `url("${prefix}/`);
-                  css = css.replace(/url\(\/(?!\/|!tunnel=|!config)/gi, `url(${prefix}/`);
+                  // url("/assets/..." ) -> url("/!tunnel=slug/assets/..." ) preserving quote
+                  css = css.replace(/url\(\s*(["']?)(\/(?!\/|!tunnel=|!config)[^"')]*)\1\s*\)/gi, (m, q, path) => `url(${q}${prefix}${path}${q})`);
+                  // @import "/assets/..." and @import url(...)
+                  css = css.replace(/@import\s+(["'])(\/(?!\/|!tunnel=|!config)[^"']+)\1/gi, (m, q, path) => `@import ${q}${prefix}${path}${q}`);
+                  css = css.replace(/@import\s+url\(\s*(["']?)(\/(?!\/|!tunnel=|!config)[^"')]+)\1\s*\)/gi, (m, q, path) => `@import url(${q}${prefix}${path}${q})`);
                   bodyBytes = new TextEncoder().encode(css);
                   outHeaders.set("content-length", String(bodyBytes.length));
+                }
+              } catch {
+                // ignore
+              }
+            }
+            // Rewrite JS absolute URLs: fetch("/api...") , import "/assets/..." , Worker("/worker.js") etc.
+            const shouldRewriteJs = isJs && bodyBytes.length > 0 && status === 200 && request.method === "GET";
+            if (shouldRewriteJs) {
+              try {
+                let js = new TextDecoder().decode(bodyBytes);
+                const prefix = `/!tunnel=${entry.slug}`;
+                if (!js.includes(prefix + "/") && js.includes("/")) {
+                  // Replace quoted absolute paths: " /assets/..."  ' /api/...'  ` /...`
+                  // Matches " /..., ' /..., ` /..., ( /...  and keeps prefix
+                  // Simple but covers 90% of SPA routing: "/assets/", "/api/", "/ws"
+                  const before = js;
+                  js = js.replace(/(["'`\(\s,;:=])\/(?!\/|!tunnel=|!config)([a-zA-Z0-9_\-\.\/])/g, (m, pre, first) => `${pre}${prefix}/${first}`);
+                  // Fix double prefix if any
+                  js = js.replace(new RegExp(prefix + "/" + prefix + "/", "g"), prefix + "/");
+                  if (js !== before) {
+                    bodyBytes = new TextEncoder().encode(js);
+                    outHeaders.set("content-length", String(bodyBytes.length));
+                  }
                 }
               } catch {
                 // ignore
