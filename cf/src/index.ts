@@ -2024,7 +2024,7 @@ export default {
           }
           var st=el.getAttribute&&el.getAttribute("style");
           if(st&&st.includes("url(/")){
-            el.setAttribute("style",st.replace(/url\(\s*(["']?)(\/(?!\/|!tunnel=|!config)[^"')]*)\1\s*\)/g,function(mm,q,path){return "url("+q+p+path+q+")"}));
+            el.setAttribute("style",st.replace(/url\(\s*(["']?)(\/(?!\/|!tunnel=|!config)[^"')]*)\\1\s*\)/g,function(mm,q,path){return "url("+q+p+path+q+")"}));
           }
         }
         fix(n);
