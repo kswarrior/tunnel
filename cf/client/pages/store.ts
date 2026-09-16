@@ -35,10 +35,11 @@ function write(key: string, value: unknown): void {
   pendingWrites.set(key, value);
   if (writeTimer !== null) return;
   // batch writes to next frame — avoids blocking scroll/input
-  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-    writeTimer = (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(flushWrites) as unknown as number;
+  const w = globalThis as unknown as { requestIdleCallback?: (cb: () => void) => number };
+  if (typeof w.requestIdleCallback === "function") {
+    writeTimer = w.requestIdleCallback(flushWrites) as unknown as number;
   } else {
-    writeTimer = window.setTimeout(flushWrites, 0);
+    writeTimer = setTimeout(flushWrites, 0) as unknown as number;
   }
 }
 
