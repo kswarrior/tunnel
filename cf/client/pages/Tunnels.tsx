@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Modal } from "../components/Modal";
 import { CheckingPills, Skeleton } from "../components/Skeleton";
 import {
-  CopyIcon,
   EntityCard,
   OpenIcon,
   PencilIcon,
@@ -68,15 +67,6 @@ async function unpublishTunnel(slug: string): Promise<void> {
   }
 }
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 const TunnelCard = memo(function TunnelCard({
   tunnel,
   hosts,
@@ -121,13 +111,6 @@ const TunnelCard = memo(function TunnelCard({
   );
 
   const publicURL = `/!tunnel=${tunnel.slug}`;
-  const cliCmd = token
-    ? `kstunnel --host ${token} --tunnel ${tunnel.slug} --target ${tunnel.target}`
-    : `kstunnel --host <id> --tunnel ${tunnel.slug} --target ${tunnel.target}`;
-
-  const handleCopy = async () => {
-    await copyText(cliCmd);
-  };
 
   const agentText = !agentKnown
     ? "Agent: no host"
@@ -196,12 +179,6 @@ const TunnelCard = memo(function TunnelCard({
           label: `Open /!tunnel=${tunnel.slug} in a new tab`,
           icon: <OpenIcon />,
           onClick: () => window.open(publicURL, "_blank", "noopener"),
-        },
-        {
-          key: "copy",
-          label: "Copy CLI command",
-          icon: <CopyIcon />,
-          onClick: () => void handleCopy(),
         },
         {
           key: "edit",
