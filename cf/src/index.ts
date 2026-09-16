@@ -1964,29 +1964,12 @@ export default {
                 // ignore
               }
             }
-            // Rewrite JS absolute URLs: fetch("/api...") , import "/assets/..." , Worker("/worker.js") etc.
-            const shouldRewriteJs = isJs && bodyBytes.length > 0 && status === 200 && request.method === "GET";
-            if (shouldRewriteJs) {
-              try {
-                let js = new TextDecoder().decode(bodyBytes);
-                const prefix = `/!tunnel=${entry.slug}`;
-                if (!js.includes(prefix + "/") && js.includes("/")) {
-                  // Replace quoted absolute paths: " /assets/..."  ' /api/...'  ` /...`
-                  // Matches " /..., ' /..., ` /..., ( /...  and keeps prefix
-                  // Simple but covers 90% of SPA routing: "/assets/", "/api/", "/ws"
-                  const before = js;
-                  js = js.replace(/(["'])\/(?!\/|!tunnel=|!config)/g, (m, q) => `${q}${prefix}/`);
-                  // Fix double prefix if any
-                  js = js.replace(new RegExp(prefix + "/" + prefix + "/", "g"), prefix + "/");
-                  if (js !== before) {
-                    bodyBytes = new TextEncoder().encode(js);
-                    outHeaders.set("content-length", String(bodyBytes.length));
-                  }
-                }
-              } catch {
-                // ignore
-              }
-            }
+            // JS rewriting is intentionally minimal for generic sites: the injected fetch/XHR/WS interceptor
+            // handles dynamic absolute URLs at runtime (fetch("/api") -> /!tunnel=slug/api).
+            // Static rewriting of JS files is fragile (breaks "/" , regex, JSON) and caused blank page for opencode
+            // ("/" -> "/!tunnel=code/" broke routing). Only rewrite obvious asset imports for CSS injection, not generic.
+            // Disabled for now — rely on interceptor + HTML/CSS rewriting for all websites.
+            void isJs;
             if (shouldRewriteHtml) {
               try {
                 let html = new TextDecoder().decode(bodyBytes);
