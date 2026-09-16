@@ -31,9 +31,18 @@
   --duration-fast: 140ms;
   --duration-normal: 220ms;
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+/* remove blue link/focus box on tap/click — keep only keyboard focus-visible */
+*:focus { outline: none; }
+*:focus:not(:focus-visible) { outline: none; box-shadow: none !important; }
+a, button, [role="button"], .btn, .icon-btn, .icon-only-btn, .nav-item, .stat-card { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+a:focus, button:focus, [role="button"]:focus, input:focus, select:focus, textarea:focus { outline: none; }
+button::-moz-focus-inner, a::-moz-focus-inner { border: 0; }
+button, a, .btn, .icon-btn, .icon-only-btn, .nav-item, .stat-card { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.stat-card *, .item-card *, .card * { -webkit-tap-highlight-color: transparent; }
+::selection { background: rgba(16,185,129,0.18); }
 body {
   margin: 0;
   min-height: 100vh;
@@ -44,7 +53,6 @@ body {
   background: linear-gradient(180deg, #ffffff 0%, #f7fdf9 55%, #f0fdf4 100%);
   overflow-x: hidden;
 }
-::selection { background: rgba(16,185,129,0.18); }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: rgba(15,27,45,0.12); border-radius: 999px; }
 *::-webkit-scrollbar-track { background: transparent; }
