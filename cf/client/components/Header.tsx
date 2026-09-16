@@ -1,18 +1,9 @@
 interface HeaderProps {
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
-  statusText: string;
 }
 
-function statusState(text: string): "online" | "offline" | "checking" {
-  const t = text.toLowerCase();
-  if (t.includes("online")) return "online";
-  if (t.includes("offline")) return "offline";
-  return "checking";
-}
-
-export function Header({ sidebarOpen, onToggleSidebar, statusText }: HeaderProps) {
-  const state = statusState(statusText);
+export function Header({ sidebarOpen, onToggleSidebar }: HeaderProps) {
   return (
     <header className="header">
       <button
@@ -76,7 +67,6 @@ export function Header({ sidebarOpen, onToggleSidebar, statusText }: HeaderProps
         <span>KS Tunnel</span>
       </div>
       <div className="header-spacer" />
-      <span className="header-status" data-state={state}>{statusText}</span>
     </header>
   );
 }

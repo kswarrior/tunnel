@@ -187,18 +187,11 @@ export default function App(): JSX.Element {
     // The host is deliberately NOT added to Hosts here.
   }, []);
 
-  const statusText = status.loading
-    ? "Connecting…"
-    : status.error
-      ? "Worker offline"
-      : "Worker online";
-
   return (
     <div className="shell">
       <Header
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
-        statusText={statusText}
       />
       <div className="body">
         <Sidebar active={nav} open={sidebarOpen} onNavigate={handleNavigate} />
