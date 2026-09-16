@@ -7,6 +7,26 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    target: "es2022",
+    cssCodeSplit: true,
+    cssMinify: "esbuild",
+    minify: "esbuild",
+    sourcemap: false,
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+        },
+      },
+    },
+  },
+  esbuild: {
+    drop: ["console", "debugger"],
+    legalComments: "none",
+  },
+  optimizeDeps: {
+    include: ["react", "react-dom"],
   },
   server: {
     port: 5173,
