@@ -64,7 +64,8 @@ jobs:
           set -e
 
           npm install --global opencode-ai
-
+          
+          ./kstunnel --config:host --host kstunnel-code
           echo "===== OpenCode ====="
           opencode --version
           echo "===================="
@@ -110,37 +111,6 @@ jobs:
 
           echo "OpenCode Web UI is running on port 7070."
 
-      - name: Install Cloudflare Tunnel
-        run: |
-          set -e
-
-          curl -fL \
-            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-            -o /tmp/cloudflared
-
-          chmod +x /tmp/cloudflared
-
-          sudo install /tmp/cloudflared /usr/local/bin/cloudflared
-
-          cloudflared --version
-
-          nohup cloudflared tunnel run \
-            --token "eyJhIjoiZTJkZjY3MDI5ZWZlZTBmY2JhM2ExMjNjN2VmNTcxNTAiLCJ0IjoiNDdjOTdjYmItN2EwNC00MjIyLWJhY2UtZmM0MmU4ZmUxNDYyIiwicyI6Ik16RmpZVGM0WVRndE5HVTJZeTAwT0RZd0xUa3dOekl0TmpVMU4yUTBOekZoWkRnMCJ9" \
-            > /tmp/cloudflared.log 2>&1 &
-
-          CLOUDFLARED_PID=$!
-
-          echo "$CLOUDFLARED_PID" > /tmp/cloudflared.pid
-
-          sleep 5
-
-          if ! kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
-            echo "Cloudflare Tunnel failed to start."
-            cat /tmp/cloudflared.log
-            exit 1
-          fi
-
-          echo "Cloudflare Tunnel is running."
 
       - name: Monitor repository
         continue-on-error: true
