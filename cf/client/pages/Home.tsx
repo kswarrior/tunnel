@@ -80,9 +80,9 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
         <section className="card">
           <h2>Quick start</h2>
           <p className="muted" style={{ margin: "0 0 8px" }}>
-            1. Run <code>kstunnel --config:host</code> on the machine to expose and Allow it (Hosts).
-            2. Add a tunnel (Tunnels) pointing at that host — e.g. <code>/!tunnel=hello → 127.0.0.1:4757</code>.
-            3. Run the shown <code>kstunnel --host … --tunnel … --target …</code> command and open the public URL.
+            1. Run <code>kstunnel --config:host</code> on the machine to expose and Allow it (Hosts) — keep it running, it auto-serves.
+            2. Add a tunnel (Tunnels) pointing at that host — e.g. <code>/!tunnel=hello → 127.0.0.1:4757</code> (auto-publishes & becomes <em>Live</em> when the agent is online).
+            3. Open <code>/!tunnel=hello</code> — no per-tunnel <code>--tunnel</code> CLI needed (host-mode pushes <code>tunnel-spec</code> via WSS). Legacy <code>kstunnel --host … --tunnel … --target …</code> still works.
           </p>
           <div className="row" style={{ justifyContent: "flex-start" }}>
             <button type="button" className="btn" onClick={() => onGo("hosts")}>

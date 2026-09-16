@@ -292,8 +292,8 @@ export function TunnelsPage({ tunnels, hosts, providers, onAdd, onToggle, onUpda
       return "A tunnel with this name already exists.";
     }
     if (!isTarget(v.target)) return "URL must look like host:port, e.g. 127.0.0.1:4757.";
-    if (hosts.length > 0 && !v.hostId) return "Pick a host — this is where the CLI serves the URL from.";
-    if (v.hostId && !hosts.some((h) => h.id === v.hostId)) return "Selected host no longer exists.";
+    if (!v.hostId) return hosts.length === 0 ? "No hosts yet — run kstunnel --config:host on the target machine and Allow it first, then pick that host here." : "Pick a host — this is where the CLI serves the URL from.";
+    if (!hosts.some((h) => h.id === v.hostId)) return "Selected host no longer exists.";
     if (providers.length > 0 && !v.providerId) return "Pick a provider.";
     if (v.providerId && !providers.some((p) => p.id === v.providerId)) {
       return "Selected provider no longer exists.";
