@@ -74,7 +74,6 @@ export function Header({ sidebarOpen, onToggleSidebar, statusText }: HeaderProps
           </g>
         </svg>
         <span>KS Tunnel</span>
-        <span className="brand-sub">Glass</span>
       </div>
       <div className="header-spacer" />
       <span className="header-status" data-state={state}>{statusText}</span>

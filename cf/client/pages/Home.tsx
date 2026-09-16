@@ -16,10 +16,6 @@ export function HomePage({ status, tunnels, hosts, providers, onRefresh, onGo }:
     <div className="container">
       <div className="page-head">
         <div>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#0f9d58", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.14)", padding: "3px 8px", borderRadius: 999 }}>White · Green · Glass</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#8ea0b8" }}>Cloudflare Workers</span>
-          </div>
           <h1 style={{ display: "flex", alignItems: "center", gap: 10 }}>
             KS Tunnel
             <span style={{ width: 8, height: 8, borderRadius: 999, background: status.error ? "#ef4444" : status.loading ? "#f59e0b" : "#10b981", boxShadow: status.error ? "0 0 0 5px rgba(239,68,68,0.14)" : "0 0 0 5px rgba(16,185,129,0.16)", flex: "0 0 8px" }} />
