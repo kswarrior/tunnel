@@ -170,12 +170,6 @@ const TunnelCard = memo(function TunnelCard({
               </span>
             </span>
           )}
-          {tunnel.active && !tunnelLive && (
-            <span className="error" style={{ display: "block", marginTop: 4 }}>
-              Enabled, but no CLI tunnel connected for <code>/!tunnel={tunnel.slug}</code> → <code>{tunnel.target}</code>.
-              {" Keep "}<code>kstunnel --host {token || "<id>"}</code> running on the host (host mode) — the worker pushes tunnel-spec via WSS and the CLI auto-opens the tunnel (no manual <code>--tunnel --target</code> needed).
-            </span>
-          )}
           {tunnelLive && !registryLoading && !published && (
             <span className="error" style={{ display: "block", marginTop: 4 }}>
               Tunnel wss is connected, but /!tunnel={tunnel.slug} is not published for this host — re-save to publish.
