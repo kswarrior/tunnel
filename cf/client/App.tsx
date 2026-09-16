@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { Sidebar, type NavKey } from "./components/Sidebar";
-import { HomePage } from "./pages/Home";
-import { TunnelsPage } from "./pages/Tunnels";
-import { HostsPage } from "./pages/Hosts";
-import { ProvidersPage } from "./pages/Providers";
-import { SettingsPage } from "./pages/Settings";
-import { ConfigHostPage } from "./pages/ConfigHost";
 import { getConfigHostFromLocation } from "./pages/presence";
 import { useHosts, useProviders, useTunnels, newHost } from "./pages/store";
 import type { WorkerStatus } from "./pages/types";
+
+const HomePage = lazy(() => import("./pages/Home").then((m) => ({ default: m.HomePage })));
+const TunnelsPage = lazy(() => import("./pages/Tunnels").then((m) => ({ default: m.TunnelsPage })));
+const HostsPage = lazy(() => import("./pages/Hosts").then((m) => ({ default: m.HostsPage })));
+const ProvidersPage = lazy(() => import("./pages/Providers").then((m) => ({ default: m.ProvidersPage })));
+const SettingsPage = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsPage })));
+const ConfigHostPage = lazy(() => import("./pages/ConfigHost").then((m) => ({ default: m.ConfigHostPage })));
 
 type HelloResponse = {
   message: string;
@@ -30,43 +31,39 @@ function useWorkerStatus() {
   });
 
   const refresh = useCallback(() => {
-    let cancelled = false;
+    const ac = new AbortController();
     setState((s) => ({ ...s, loading: true, error: null }));
 
     Promise.all([
-      fetch("/api/hello").then(async (res) => {
+      fetch("/api/hello", { signal: ac.signal, cache: "no-store" }).then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return (await res.json()) as HelloResponse;
       }),
-      fetch("/api/health").then(async (res) => {
+      fetch("/api/health", { signal: ac.signal, cache: "no-store" }).then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return (await res.json()) as HealthResponse;
       }),
     ])
       .then(([hello, health]) => {
-        if (!cancelled) {
-          setState({
-            loading: false,
-            error: null,
-            message: hello.message,
-            timestamp: hello.timestamp,
-            healthy: health.ok,
-          });
-        }
+        if (ac.signal.aborted) return;
+        setState({
+          loading: false,
+          error: null,
+          message: hello.message,
+          timestamp: hello.timestamp,
+          healthy: health.ok,
+        });
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
-          setState((s) => ({
-            ...s,
-            loading: false,
-            error: err instanceof Error ? err.message : "Worker unreachable",
-          }));
-        }
+        if (ac.signal.aborted) return;
+        setState((s) => ({
+          ...s,
+          loading: false,
+          error: err instanceof Error ? err.message : "Worker unreachable",
+        }));
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => ac.abort();
   }, []);
 
   useEffect(() => {
@@ -96,6 +93,12 @@ export default function App(): JSX.Element {
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
+  // memoize configHost presence check to avoid re-scanning on every render
+  const configAlreadySaved = useMemo(
+    () => (configHost ? hosts.items.some((h) => h.hostname.trim().toLowerCase() === configHost.trim().toLowerCase()) : false),
+    [configHost, hosts.items],
+  );
+
   useEffect(() => {
     const onPopState = () => {
       try {
@@ -110,13 +113,14 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     if (!sidebarOpen) return;
+    const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeSidebar();
     };
     window.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
     };
   }, [sidebarOpen, closeSidebar]);
@@ -199,68 +203,70 @@ export default function App(): JSX.Element {
       <div className="body">
         <Sidebar active={nav} open={sidebarOpen} onNavigate={handleNavigate} />
         <main className="content" aria-hidden={sidebarOpen ? true : undefined}>
-          {configHost ? (
-            <ConfigHostPage
-              host={configHost}
-              alreadySaved={hosts.items.some((h) => h.hostname.trim().toLowerCase() === configHost.trim().toLowerCase())}
-              onAllow={handleAllowHost}
-              onDeny={handleDenyHost}
-              onViewHosts={() => {
-                clearConfigHost();
-                setNav("hosts");
-              }}
-            />
-          ) : (
-            <>
-              {nav === "home" && (
-                <HomePage
-                  status={status}
-                  tunnels={tunnels.items}
-                  hosts={hosts.items}
-                  providers={providers.items}
-                  onRefresh={refresh}
-                  onGo={(key) => setNav(key)}
-                />
-              )}
-              {nav === "tunnels" && (
-                <TunnelsPage
-                  tunnels={tunnels.items}
-                  hosts={hosts.items}
-                  providers={providers.items}
-                  onAdd={tunnels.add}
-                  onToggle={(id) => {
-                    const found = tunnels.items.find((t) => t.id === id);
-                    if (found) tunnels.update(id, { active: !found.active });
-                  }}
-                  onUpdate={tunnels.update}
-                  onRemove={tunnels.remove}
-                />
-              )}
-              {nav === "hosts" && (
-                <HostsPage
-                  hosts={hosts.items}
-                  tunnels={tunnels.items}
-                  onAdd={hosts.add}
-                  onUpdate={hosts.update}
-                  onRemove={handleRemoveHost}
-                />
-              )}
-              {nav === "providers" && (
-                <ProvidersPage
-                  providers={providers.items}
-                  tunnels={tunnels.items}
-                  onAdd={providers.add}
-                  onToggle={(id) => {
-                    const found = providers.items.find((p) => p.id === id);
-                    if (found) providers.update(id, { active: !found.active });
-                  }}
-                  onUpdate={providers.update}
-                  onRemove={handleRemoveProvider}
-                />
-              )}
-              {nav === "settings" && <SettingsPage />}
-            </>
-          )}
+          <Suspense fallback={<div className="container"><span className="skeleton" style={{ height: 120, display: "block" }} /></div>}>
+            {configHost ? (
+              <ConfigHostPage
+                host={configHost}
+                alreadySaved={configAlreadySaved}
+                onAllow={handleAllowHost}
+                onDeny={handleDenyHost}
+                onViewHosts={() => {
+                  clearConfigHost();
+                  setNav("hosts");
+                }}
+              />
+            ) : (
+              <>
+                {nav === "home" && (
+                  <HomePage
+                    status={status}
+                    tunnels={tunnels.items}
+                    hosts={hosts.items}
+                    providers={providers.items}
+                    onRefresh={refresh}
+                    onGo={(key) => setNav(key)}
+                  />
+                )}
+                {nav === "tunnels" && (
+                  <TunnelsPage
+                    tunnels={tunnels.items}
+                    hosts={hosts.items}
+                    providers={providers.items}
+                    onAdd={tunnels.add}
+                    onToggle={(id) => {
+                      const found = tunnels.items.find((t) => t.id === id);
+                      if (found) tunnels.update(id, { active: !found.active });
+                    }}
+                    onUpdate={tunnels.update}
+                    onRemove={tunnels.remove}
+                  />
+                )}
+                {nav === "hosts" && (
+                  <HostsPage
+                    hosts={hosts.items}
+                    tunnels={tunnels.items}
+                    onAdd={hosts.add}
+                    onUpdate={hosts.update}
+                    onRemove={handleRemoveHost}
+                  />
+                )}
+                {nav === "providers" && (
+                  <ProvidersPage
+                    providers={providers.items}
+                    tunnels={tunnels.items}
+                    onAdd={providers.add}
+                    onToggle={(id) => {
+                      const found = providers.items.find((p) => p.id === id);
+                      if (found) providers.update(id, { active: !found.active });
+                    }}
+                    onUpdate={providers.update}
+                    onRemove={handleRemoveProvider}
+                  />
+                )}
+                {nav === "settings" && <SettingsPage />}
+              </>
+            )}
+          </Suspense>
         </main>
       </div>
       <div

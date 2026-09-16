@@ -268,11 +268,168 @@ export function denyHost(host: string): Promise<void> {
 }
 
 /**
- * Live presence + config decision for one host id.
- * Opens a watcher WebSocket for instant updates and polls the HTTP status
- * endpoint every 7s as a fallback/reconciler.
- * Missing/404 decision counts as "pending" (not decided yet = OK, keep waiting).
+ * Live presence + config decision for one host id — **deduplicated**.
+ * A single WS + poll loop per host is shared across all cards that watch
+ * the same host (e.g. 10 tunnels on one host = 1 socket, not 10).
+ * Ref-counted: last unsubscriber tears the socket down.
  */
+type Listener = (s: PresenceState) => void;
+
+type SharedEntry = {
+  state: PresenceState;
+  listeners: Set<Listener>;
+  ws: WebSocket | null;
+  pollTimer: number | null;
+  pingTimer: number | null;
+  retryTimer: number | null;
+  cancelled: boolean;
+};
+
+const presenceCache = new Map<string, SharedEntry>();
+
+function createEntry(): SharedEntry {
+  return {
+    state: { online: null, agents: 0, decision: "pending", tunnels: [] },
+    listeners: new Set(),
+    ws: null,
+    pollTimer: null,
+    pingTimer: null,
+    retryTimer: null,
+    cancelled: false,
+  };
+}
+
+function notify(entry: SharedEntry) {
+  for (const l of entry.listeners) l(entry.state);
+}
+
+function patchState(entry: SharedEntry, patch: Partial<PresenceState> | ((s: PresenceState) => PresenceState)) {
+  const next = typeof patch === "function" ? (patch as (s: PresenceState) => PresenceState)(entry.state) : { ...entry.state, ...patch };
+  // shallow compare tunnels to avoid spurious renders
+  const sameTunnels =
+    next.tunnels === entry.state.tunnels ||
+    (next.tunnels.length === entry.state.tunnels.length && next.tunnels.every((v, i) => v === entry.state.tunnels[i]));
+  if (next.online === entry.state.online && next.agents === entry.state.agents && next.decision === entry.state.decision && sameTunnels) return;
+  entry.state = next;
+  notify(entry);
+}
+
+function startShared(host: string, entry: SharedEntry) {
+  entry.cancelled = false;
+
+  const poll = async () => {
+    try {
+      const res = await fetch(statusURL(host), { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { online?: boolean; agents?: number; decision?: unknown; tunnels?: unknown };
+      if (entry.cancelled) return;
+      const d = normalizeDecision(data.decision) ?? "pending";
+      const tunnels = Array.isArray(data.tunnels) ? (data.tunnels.filter((t): t is string => typeof t === "string") as string[]) : undefined;
+      if (typeof data.online === "boolean") {
+        patchState(entry, { online: data.online as boolean, agents: (data.agents as number) ?? 0, decision: d, tunnels: tunnels ?? entry.state.tunnels });
+      } else {
+        patchState(entry, (s) => ({ ...s, decision: d, tunnels: tunnels ?? s.tunnels }));
+      }
+    } catch {
+      // keep last known state
+    }
+  };
+
+  const connect = () => {
+    if (entry.cancelled) return;
+    try {
+      entry.ws = new WebSocket(watcherWSURL(host));
+    } catch {
+      entry.retryTimer = window.setTimeout(connect, 5000) as unknown as number;
+      return;
+    }
+    entry.ws.onmessage = (ev) => {
+      if (entry.cancelled) return;
+      const raw = String(ev.data);
+      try {
+        const data = JSON.parse(raw) as { type?: string; online?: boolean; agents?: number; decision?: unknown; tunnels?: unknown };
+        if (data && data.type === "decision") {
+          const d = normalizeDecision(data.decision) ?? parseDecisionMessage(raw);
+          if (d) {
+            patchState(entry, (s) => (s.decision === d ? s : { ...s, decision: d }));
+            return;
+          }
+        }
+        if (data && data.type === "presence" && typeof data.online === "boolean") {
+          const d = normalizeDecision(data.decision) ?? undefined;
+          const tunnels = Array.isArray(data.tunnels) ? (data.tunnels.filter((t): t is string => typeof t === "string") as string[]) : undefined;
+          patchState(entry, (s) => ({
+            online: data.online as boolean,
+            agents: (data.agents as number) ?? 0,
+            decision: d ?? s.decision,
+            tunnels: tunnels ?? s.tunnels,
+          }));
+          return;
+        }
+      } catch {
+        // fall through
+      }
+      const d = parseDecisionMessage(raw);
+      if (d) patchState(entry, (s) => (s.decision === d ? s : { ...s, decision: d }));
+    };
+    entry.ws.onclose = () => {
+      if (entry.cancelled) return;
+      entry.retryTimer = window.setTimeout(connect, 5000) as unknown as number;
+    };
+    entry.ws.onerror = () => {
+      try {
+        entry.ws?.close();
+      } catch {
+        // ignore
+      }
+    };
+  };
+
+  void poll();
+  connect();
+  entry.pollTimer = window.setInterval(poll, 7000) as unknown as number;
+  entry.pingTimer = window.setInterval(() => {
+    try {
+      if (entry.ws && entry.ws.readyState === WebSocket.OPEN) entry.ws.send('{"type":"ping"}');
+    } catch {
+      // ignore
+    }
+  }, 25000) as unknown as number;
+}
+
+function stopShared(host: string, entry: SharedEntry) {
+  entry.cancelled = true;
+  if (entry.pollTimer !== null) window.clearInterval(entry.pollTimer);
+  if (entry.pingTimer !== null) window.clearInterval(entry.pingTimer);
+  if (entry.retryTimer !== null) window.clearTimeout(entry.retryTimer);
+  entry.pollTimer = entry.pingTimer = entry.retryTimer = null;
+  try {
+    entry.ws?.close();
+  } catch {
+    // ignore
+  }
+  entry.ws = null;
+  presenceCache.delete(host);
+}
+
+function subscribePresence(host: string, cb: Listener): () => void {
+  let entry = presenceCache.get(host);
+  if (!entry) {
+    entry = createEntry();
+    presenceCache.set(host, entry);
+    startShared(host, entry);
+  }
+  entry.listeners.add(cb);
+  // push current state immediately (next tick to avoid sync setState during render)
+  queueMicrotask(() => cb(entry!.state));
+  return () => {
+    const e = presenceCache.get(host);
+    if (!e) return;
+    e.listeners.delete(cb);
+    if (e.listeners.size === 0) stopShared(host, e);
+  };
+}
+
 export function useHostPresence(host: string | null): PresenceState {
   const [state, setState] = useState<PresenceState>({ online: null, agents: 0, decision: "pending", tunnels: [] });
 
@@ -281,120 +438,7 @@ export function useHostPresence(host: string | null): PresenceState {
       setState({ online: null, agents: 0, decision: "pending", tunnels: [] });
       return;
     }
-    let cancelled = false;
-    let ws: WebSocket | null = null;
-    let pollTimer: number | null = null;
-    let retryTimer: number | null = null;
-
-    const applyDecision = (raw: string) => {
-      const d = parseDecisionMessage(raw);
-      if (d && !cancelled) {
-        setState((s) => (s.decision === d ? s : { ...s, decision: d }));
-      }
-    };
-
-    const poll = async () => {
-      try {
-        const res = await fetch(statusURL(host), { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as { online?: boolean; agents?: number; decision?: unknown; tunnels?: unknown };
-        if (cancelled) return;
-        const d = normalizeDecision(data.decision) ?? "pending";
-        const tunnels = Array.isArray(data.tunnels)
-          ? (data.tunnels.filter((t): t is string => typeof t === "string") as string[])
-          : undefined;
-        if (typeof data.online === "boolean") {
-          setState((s) => ({ online: data.online as boolean, agents: data.agents ?? 0, decision: d, tunnels: tunnels ?? s.tunnels }));
-        } else {
-          setState((s) => ({ ...s, decision: d, tunnels: tunnels ?? s.tunnels }));
-        }
-      } catch {
-        // keep last known state; WS may still deliver updates
-      }
-    };
-
-    const connect = () => {
-      if (cancelled) return;
-      try {
-        ws = new WebSocket(watcherWSURL(host));
-      } catch {
-        retryTimer = window.setTimeout(connect, 5000);
-        return;
-      }
-      ws.onmessage = (ev) => {
-        if (cancelled) return;
-        const raw = String(ev.data);
-        try {
-          const data = JSON.parse(raw) as {
-            type?: string;
-            online?: boolean;
-            agents?: number;
-            host?: string;
-            decision?: unknown;
-            tunnels?: unknown;
-          };
-          if (data && data.type === "decision") {
-            const d = normalizeDecision(data.decision) ?? parseDecisionMessage(raw);
-            if (d) {
-              setState((s) => ({ ...s, decision: d }));
-              return;
-            }
-          }
-          if (data && data.type === "presence" && typeof data.online === "boolean") {
-            const d = normalizeDecision(data.decision) ?? undefined;
-            const tunnels = Array.isArray(data.tunnels)
-              ? (data.tunnels.filter((t): t is string => typeof t === "string") as string[])
-              : undefined;
-            setState((s) => ({
-              online: data.online as boolean,
-              agents: data.agents ?? 0,
-              decision: d ?? s.decision,
-              tunnels: tunnels ?? s.tunnels,
-            }));
-            return;
-          }
-        } catch {
-          // fall through to raw decision parse
-        }
-        applyDecision(raw);
-      };
-      ws.onclose = () => {
-        if (cancelled) return;
-        retryTimer = window.setTimeout(connect, 5000);
-      };
-      ws.onerror = () => {
-        try {
-          ws?.close();
-        } catch {
-          // ignore
-        }
-      };
-    };
-
-    void poll();
-    connect();
-    pollTimer = window.setInterval(poll, 7000);
-
-    const onPing = () => {
-      try {
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send('{"type":"ping"}');
-      } catch {
-        // ignore
-      }
-    };
-    const pingTimer = window.setInterval(onPing, 25000);
-
-    return () => {
-      cancelled = true;
-      if (pollTimer !== null) window.clearInterval(pollTimer);
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-      window.clearInterval(pingTimer);
-      try {
-        ws?.close();
-      } catch {
-        // ignore
-      }
-    };
+    return subscribePresence(host, setState);
   }, [host]);
 
   return state;

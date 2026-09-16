@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 
 /**
  * Shared entity card layout used by all pages (Tunnels / Hosts / Providers):
