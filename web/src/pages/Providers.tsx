@@ -40,6 +40,7 @@ export function Providers() {
             type="button"
             className="btn btn-primary"
             onClick={() => setIsAdding(true)}
+            disabled={providers === null}
           >
             <PlusIcon size={16} />
             Add
