@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 type IconProps = {
   size?: number
   className?: string
@@ -9,7 +11,7 @@ function Icon({
   className,
   strokeWidth = 1.8,
   children,
-}: IconProps & { children: React.ReactNode }) {
+}: IconProps & { children: ReactNode }) {
   return (
     <svg
       width={size}
