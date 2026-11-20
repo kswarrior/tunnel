@@ -165,7 +165,7 @@ input {
   opacity: 0;
 }
 
-.sidebar-close {
+.icon-button.sidebar-close {
   display: none;
   margin-left: auto;
 }
@@ -950,7 +950,7 @@ input {
     left: -16px;
   }
 
-  .sidebar-close {
+  .icon-button.sidebar-close {
     display: grid;
   }
 
