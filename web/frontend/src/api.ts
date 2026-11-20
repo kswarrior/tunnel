@@ -1,4 +1,10 @@
-import type { NewTunnel, Provider, Tunnel } from './types'
+import type {
+  Agent,
+  ClaimAction,
+  NewTunnel,
+  Provider,
+  Tunnel,
+} from './types'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -36,6 +42,27 @@ export function createProvider(name: string): Promise<Provider> {
     method: 'POST',
     body: JSON.stringify({ name }),
   })
+}
+
+export function getAgents(): Promise<Agent[]> {
+  return request<Agent[]>('/api/agents')
+}
+
+export function getClaim(token: string): Promise<Agent> {
+  return request<Agent>(`/api/agents/claim/${encodeURIComponent(token)}`)
+}
+
+export function respondToClaim(
+  token: string,
+  action: ClaimAction,
+): Promise<{ status: string }> {
+  return request<{ status: string }>(
+    `/api/agents/claim/${encodeURIComponent(token)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    },
+  )
 }
 
 export function getTunnels(): Promise<Tunnel[]> {
