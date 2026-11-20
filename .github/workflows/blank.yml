@@ -124,23 +124,119 @@ jobs:
 
           cloudflared --version
 
-          nohup cloudflared tunnel run \
-            --token "eyJhIjoiZTJkZjY3MDI5ZWZlZTBmY2JhM2ExMjNjN2VmNTcxNTAiLCJ0IjoiNDdjOTdjYmItN2EwNC00MjIyLWJhY2UtZmM0MmU4ZmUxNDYyIiwicyI6Ik16RmpZVGM0WVRndE5HVTJZeTAwT0RZd0xUa3dOekl0TmpVMU4yUTBOekZoWkRnMCJ9" \
-            > /tmp/cloudflared.log 2>&1 &
+          - name: Start Cloudflare Quick Tunnel
+        run: |
+          set -euo pipefail
 
-          CLOUDFLARED_PID=$!
+          LOG="/tmp/cloudflared.log"
+          PIDFILE="/tmp/cloudflared.pid"
+          TUNNEL_URL=""
 
-          echo "$CLOUDFLARED_PID" > /tmp/cloudflared.pid
+          echo "Starting free Cloudflare Quick Tunnel..."
 
-          sleep 5
+          for attempt in 1 2 3; do
 
-          if ! kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
-            echo "Cloudflare Tunnel failed to start."
-            cat /tmp/cloudflared.log
+            rm -f "$LOG" "$PIDFILE"
+
+            echo ""
+            echo "=========================================="
+            echo "Cloudflare startup attempt $attempt/3"
+            echo "=========================================="
+
+            nohup cloudflared tunnel \
+              --url http://127.0.0.1:7070 \
+              --no-autoupdate \
+              > "$LOG" 2>&1 &
+
+            CLOUDFLARED_PID=$!
+            echo "$CLOUDFLARED_PID" > "$PIDFILE"
+
+            TUNNEL_URL=""
+
+            for i in $(seq 1 60); do
+
+              TUNNEL_URL=$(
+                grep -Eo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' \
+                  "$LOG" |
+                head -n 1 || true
+              )
+
+              if [ -n "$TUNNEL_URL" ]; then
+                break
+              fi
+
+              if ! kill -0 "$CLOUDFLARED_PID" 2>/dev/null; then
+                break
+              fi
+
+              sleep 2
+            done
+
+            # Successfully obtained the public URL
+            if [ -n "$TUNNEL_URL" ]; then
+              echo "Cloudflare Quick Tunnel started successfully."
+              break
+            fi
+
+            echo "Cloudflare Tunnel startup failed."
+            cat "$LOG"
+
+            # Retry only when Cloudflare reports HTTP 429
+            if grep -qE 'status 429|429' "$LOG"; then
+
+              echo ""
+              echo "Cloudflare rate limit detected."
+
+              if [ "$attempt" -lt 3 ]; then
+
+                WAIT_TIME=$((attempt * 30))
+
+                echo "Stopping previous tunnel process..."
+
+                kill "$CLOUDFLARED_PID" 2>/dev/null || true
+                wait "$CLOUDFLARED_PID" 2>/dev/null || true
+
+                echo "Waiting ${WAIT_TIME} seconds before retry..."
+                sleep "$WAIT_TIME"
+
+                continue
+              fi
+
+              echo "Maximum retry attempts reached."
+              exit 1
+            fi
+
+            # Stop a process that is still running
+            kill "$CLOUDFLARED_PID" 2>/dev/null || true
+            wait "$CLOUDFLARED_PID" 2>/dev/null || true
+
+            echo "Cloudflare Tunnel failed for a reason other than HTTP 429."
+            exit 1
+
+          done
+
+          # Final URL validation
+          if [ -z "$TUNNEL_URL" ]; then
+            echo "Could not obtain Cloudflare Quick Tunnel URL."
+            cat "$LOG"
             exit 1
           fi
 
-          echo "Cloudflare Tunnel is running."
+          echo ""
+          echo "=========================================="
+          echo "OpenCode Public URL:"
+          echo "$TUNNEL_URL"
+          echo "=========================================="
+
+          echo "TUNNEL_URL=$TUNNEL_URL" >> "$GITHUB_ENV"
+
+          {
+            echo "### OpenCode Cloudflare Quick Tunnel"
+            echo ""
+            echo "Public URL: $TUNNEL_URL"
+            echo ""
+            echo "Local Port: 7070"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Monitor repository
         continue-on-error: true
