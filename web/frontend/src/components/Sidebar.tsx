@@ -2,8 +2,10 @@ import { NavLink } from 'react-router-dom'
 import {
   CloudIcon,
   HomeIcon,
+  PanelLeftIcon,
   SettingsIcon,
   TunnelIcon,
+  XIcon,
 } from './Icons'
 
 const navItems = [
@@ -12,6 +14,13 @@ const navItems = [
   { to: '/providers', label: 'Providers', icon: CloudIcon, end: false },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false },
 ]
+
+type SidebarProps = {
+  collapsed: boolean
+  mobileOpen: boolean
+  onToggleCollapsed: () => void
+  onCloseMobile: () => void
+}
 
 function BrandMark() {
   return (
@@ -41,14 +50,32 @@ function BrandMark() {
   )
 }
 
-export function Sidebar() {
+export function Sidebar({
+  collapsed,
+  mobileOpen,
+  onToggleCollapsed,
+  onCloseMobile,
+}: SidebarProps) {
   return (
-    <aside className="sidebar">
+    <aside
+      id="sidebar"
+      className={`sidebar${collapsed ? ' collapsed' : ''}${
+        mobileOpen ? ' mobile-open' : ''
+      }`}
+    >
       <div className="brand">
         <span className="brand-mark">
           <BrandMark />
         </span>
         <span className="brand-name">KS Tunnel</span>
+        <button
+          type="button"
+          className="icon-button sidebar-close"
+          onClick={onCloseMobile}
+          aria-label="Close navigation"
+        >
+          <XIcon size={17} />
+        </button>
       </div>
 
       <nav className="nav" aria-label="Main navigation">
@@ -61,7 +88,8 @@ export function Sidebar() {
               `nav-link${isActive ? ' active' : ''}`
             }
             aria-label={label}
-            title={label}
+            title={collapsed ? label : undefined}
+            onClick={onCloseMobile}
           >
             <span className="nav-icon">
               <Icon size={19} />
@@ -70,6 +98,24 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      <div className="sidebar-footer">
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
+          aria-controls="sidebar"
+        >
+          <span className="sidebar-toggle-icon">
+            <PanelLeftIcon size={18} />
+          </span>
+          <span className="sidebar-toggle-label">
+            {collapsed ? 'Expand' : 'Collapse'}
+          </span>
+        </button>
+      </div>
     </aside>
   )
 }
