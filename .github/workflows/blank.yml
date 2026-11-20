@@ -124,7 +124,7 @@ jobs:
 
           cloudflared --version
 
-          - name: Start Cloudflare Quick Tunnel
+      - name: Start Cloudflare Quick Tunnel
         run: |
           set -euo pipefail
 
