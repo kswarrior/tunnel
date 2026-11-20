@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { createTunnel } from '../api'
-import type { Provider, Tunnel, TunnelType } from '../types'
-import { AlertIcon, CloudIcon } from './Icons'
+import type { Agent, AgentStatus, Provider, Tunnel, TunnelType } from '../types'
+import { AgentIcon, AlertIcon, CloudIcon } from './Icons'
 import { Dropdown } from './Dropdown'
 import type { DropdownOption } from './Dropdown'
 import { Field } from './Field'
@@ -10,12 +10,13 @@ import { Modal } from './Modal'
 
 type AddTunnelModalProps = {
   providers: Provider[]
+  agents: Agent[]
   onClose: () => void
   onCreated: (tunnel: Tunnel) => void
 }
 
 type FieldErrors = Partial<
-  Record<'name' | 'providerId' | 'ip' | 'port', string>
+  Record<'name' | 'providerId' | 'agentId' | 'ip' | 'port', string>
 >
 
 const typeOptions: DropdownOption[] = [
@@ -25,13 +26,28 @@ const typeOptions: DropdownOption[] = [
   { value: 'udp', label: 'UDP' },
 ]
 
+const agentStatusLabels: Record<AgentStatus, string> = {
+  online: 'Online',
+  pending: 'Pending approval',
+  offline: 'Offline',
+  rejected: 'Rejected',
+}
+
+function defaultAgentId(agents: Agent[]) {
+  const usable = agents.filter((agent) => agent.authorized)
+  const online = usable.find((agent) => agent.status === 'online')
+  return online?.id ?? usable[0]?.id ?? ''
+}
+
 export function AddTunnelModal({
   providers,
+  agents,
   onClose,
   onCreated,
 }: AddTunnelModalProps) {
   const [name, setName] = useState('')
   const [providerId, setProviderId] = useState(providers[0]?.id ?? '')
+  const [agentId, setAgentId] = useState(defaultAgentId(agents))
   const [ip, setIp] = useState('localhost')
   const [port, setPort] = useState('')
   const [type, setType] = useState<TunnelType>('https')
@@ -44,6 +60,14 @@ export function AddTunnelModal({
     label: provider.name,
     icon: <CloudIcon size={15} />,
   }))
+
+  const agentOptions: DropdownOption[] = agents
+    .filter((agent) => agent.authorized)
+    .map((agent) => ({
+      value: agent.id,
+      label: `${agent.name} · ${agentStatusLabels[agent.status]}`,
+      icon: <AgentIcon size={15} />,
+    }))
 
   function clearError(key: keyof FieldErrors) {
     setErrors((current) => {
@@ -63,6 +87,11 @@ export function AddTunnelModal({
       return
     }
 
+    if (agentOptions.length === 0) {
+      setFormError('Run ./kstunnel and approve an agent before creating a tunnel.')
+      return
+    }
+
     const nextErrors: FieldErrors = {}
     const trimmedName = name.trim()
     const trimmedIp = ip.trim()
@@ -70,6 +99,15 @@ export function AddTunnelModal({
 
     if (!trimmedName) {
       nextErrors.name = 'Enter a tunnel name.'
+    }
+
+    if (!agentId) {
+      nextErrors.agentId = 'Select an agent.'
+    } else {
+      const agent = agents.find((item) => item.id === agentId)
+      if (!agent || agent.status !== 'online') {
+        nextErrors.agentId = 'Agent is offline. Start the CLI and try again.'
+      }
     }
 
     if (!providerId) {
@@ -102,6 +140,7 @@ export function AddTunnelModal({
       const tunnel = await createTunnel({
         name: trimmedName,
         providerId,
+        agentId,
         ip: trimmedIp,
         port: portNumber,
         type,
@@ -135,6 +174,23 @@ export function AddTunnelModal({
             autoComplete="off"
             autoFocus
             aria-invalid={Boolean(errors.name)}
+          />
+        </Field>
+
+        <Field label="Agent" htmlFor="tunnel-agent" error={errors.agentId}>
+          <Dropdown
+            id="tunnel-agent"
+            value={agentId}
+            options={agentOptions}
+            onChange={(value) => {
+              setAgentId(value)
+              clearError('agentId')
+            }}
+            placeholder={
+              agentOptions.length === 0 ? 'No approved agents' : 'Select an agent'
+            }
+            invalid={Boolean(errors.agentId)}
+            label="Agent"
           />
         </Field>
 
@@ -219,7 +275,7 @@ export function AddTunnelModal({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={submitting}
+            disabled={submitting || agentOptions.length === 0}
           >
             {submitting ? 'Adding...' : 'Add tunnel'}
           </button>
