@@ -5,3 +5,4 @@ web/backend/data.json
 web/backend/backend
 web/.ks-tunnel-*.tmp
 web/backend/.ks-tunnel-*.tmp
+cli/kstunnel
