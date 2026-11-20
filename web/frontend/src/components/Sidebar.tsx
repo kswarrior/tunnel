@@ -107,6 +107,7 @@ export function Sidebar({
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
           aria-controls="sidebar"
+          title={collapsed ? 'Expand sidebar' : undefined}
         >
           <span className="sidebar-toggle-icon">
             <PanelLeftIcon size={18} />
