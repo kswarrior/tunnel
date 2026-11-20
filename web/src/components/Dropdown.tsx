@@ -110,6 +110,7 @@ export function Dropdown({
       case 'Escape':
         if (open) {
           event.preventDefault()
+          event.stopPropagation()
           setOpen(false)
         }
         break
