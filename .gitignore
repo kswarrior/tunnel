@@ -1,4 +1,7 @@
 web/node_modules/
 web/dist/
-backend/data.json
-backend/.ks-tunnel-*.tmp
+web/data.json
+web/backend/data.json
+web/backend/backend
+web/.ks-tunnel-*.tmp
+web/backend/.ks-tunnel-*.tmp

@@ -1,0 +1,8 @@
+node_modules
+dist
+data.json
+backend/data.json
+backend/backend
+.ks-tunnel-*.tmp
+backend/.ks-tunnel-*.tmp
+*.log
