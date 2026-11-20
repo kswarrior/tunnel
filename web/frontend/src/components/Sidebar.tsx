@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
+  AgentIcon,
   CloudIcon,
   HomeIcon,
   PanelLeftIcon,
@@ -11,6 +12,7 @@ import {
 const navItems = [
   { to: '/', label: 'Home', icon: HomeIcon, end: true },
   { to: '/tunnels', label: 'Tunnels', icon: TunnelIcon, end: false },
+  { to: '/agents', label: 'Agents', icon: AgentIcon, end: false },
   { to: '/providers', label: 'Providers', icon: CloudIcon, end: false },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, end: false },
 ]

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { MenuIcon } from './components/Icons'
 import { Sidebar } from './components/Sidebar'
+import { Agents } from './pages/Agents'
+import { ClaimAgent } from './pages/ClaimAgent'
 import { Home } from './pages/Home'
 import { Providers } from './pages/Providers'
 import { Settings } from './pages/Settings'
@@ -74,8 +76,10 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/tunnels" element={<Tunnels />} />
+            <Route path="/agents" element={<Agents />} />
             <Route path="/providers" element={<Providers />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/:tokenParam" element={<ClaimAgent />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
