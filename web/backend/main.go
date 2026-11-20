@@ -21,18 +21,33 @@ type Provider struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+type Agent struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Token       string     `json:"token"`
+	Authorized  bool       `json:"authorized"`
+	Rejected    bool       `json:"rejected,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	ConnectedAt *time.Time `json:"connectedAt,omitempty"`
+}
+
 type Tunnel struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name"`
 	ProviderID string    `json:"providerId"`
+	AgentID    string    `json:"agentId"`
 	IP         string    `json:"ip"`
 	Port       int       `json:"port"`
 	Type       string    `json:"type"`
+	PublicURL  string    `json:"publicUrl"`
+	Status     string    `json:"status"`
+	Error      string    `json:"error,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
 type state struct {
 	Providers []Provider `json:"providers"`
+	Agents    []Agent    `json:"agents"`
 	Tunnels   []Tunnel   `json:"tunnels"`
 }
 
@@ -42,7 +57,11 @@ type store struct {
 	state state
 }
 
-var errUnknownProvider = errors.New("provider not found")
+var (
+	errUnknownProvider = errors.New("provider not found")
+	errUnknownAgent    = errors.New("agent not found")
+	errAgentNotAllowed = errors.New("agent not approved")
+)
 
 func newStore(path string) (*store, error) {
 	s := &store{path: path}
@@ -56,8 +75,16 @@ func newStore(path string) (*store, error) {
 		if s.state.Providers == nil {
 			s.state.Providers = []Provider{}
 		}
+		if s.state.Agents == nil {
+			s.state.Agents = []Agent{}
+		}
 		if s.state.Tunnels == nil {
 			s.state.Tunnels = []Tunnel{}
+		}
+		for i := range s.state.Tunnels {
+			if s.state.Tunnels[i].Status == "" {
+				s.state.Tunnels[i].Status = "active"
+			}
 		}
 		return s, nil
 	case errors.Is(err, os.ErrNotExist):
@@ -67,6 +94,7 @@ func newStore(path string) (*store, error) {
 				Name:      "Cloudflare",
 				CreatedAt: time.Now().UTC(),
 			}},
+			Agents:  []Agent{},
 			Tunnels: []Tunnel{},
 		}
 		if err := s.saveLocked(); err != nil {
@@ -164,20 +192,36 @@ func (s *store) addTunnel(tunnel Tunnel) (Tunnel, error) {
 
 	tunnel.ID = id
 	tunnel.CreatedAt = time.Now().UTC()
+	tunnel.Status = "pending"
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	found := false
+	foundProvider := false
 	for _, provider := range s.state.Providers {
 		if provider.ID == tunnel.ProviderID {
-			found = true
+			foundProvider = true
 			break
 		}
 	}
 
-	if !found {
+	if !foundProvider {
 		return Tunnel{}, errUnknownProvider
+	}
+
+	foundAgent := false
+	for _, agent := range s.state.Agents {
+		if agent.ID == tunnel.AgentID {
+			if !agent.Authorized {
+				return Tunnel{}, errAgentNotAllowed
+			}
+			foundAgent = true
+			break
+		}
+	}
+
+	if !foundAgent {
+		return Tunnel{}, errUnknownAgent
 	}
 
 	s.state.Tunnels = append(s.state.Tunnels, tunnel)
@@ -187,6 +231,72 @@ func (s *store) addTunnel(tunnel Tunnel) (Tunnel, error) {
 	}
 
 	return tunnel, nil
+}
+
+func (s *store) setTunnelResult(id, publicURL, errorMessage string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Tunnels {
+		if s.state.Tunnels[i].ID != id {
+			continue
+		}
+
+		if errorMessage != "" {
+			s.state.Tunnels[i].Status = "error"
+			s.state.Tunnels[i].Error = errorMessage
+			s.state.Tunnels[i].PublicURL = ""
+		} else {
+			s.state.Tunnels[i].Status = "active"
+			s.state.Tunnels[i].Error = ""
+			s.state.Tunnels[i].PublicURL = publicURL
+		}
+
+		if err := s.saveLocked(); err != nil {
+			log.Printf("save tunnel result: %v", err)
+		}
+		return
+	}
+}
+
+func (s *store) failPendingTunnelsForAgent(agentID, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	changed := false
+	for i := range s.state.Tunnels {
+		tunnel := &s.state.Tunnels[i]
+		if tunnel.AgentID != agentID || tunnel.Status != "pending" {
+			continue
+		}
+
+		tunnel.Status = "error"
+		tunnel.Error = reason
+		changed = true
+	}
+
+	if changed {
+		if err := s.saveLocked(); err != nil {
+			log.Printf("save agent disconnect: %v", err)
+		}
+	}
+}
+
+func (s *store) deleteTunnel(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Tunnels {
+		if s.state.Tunnels[i].ID != id {
+			continue
+		}
+
+		s.state.Tunnels = append(s.state.Tunnels[:i], s.state.Tunnels[i+1:]...)
+		if err := s.saveLocked(); err != nil {
+			log.Printf("delete tunnel: %v", err)
+		}
+		return
+	}
 }
 
 func newID() (string, error) {
@@ -199,6 +309,7 @@ func newID() (string, error) {
 
 type server struct {
 	store *store
+	hub   *agentHub
 }
 
 func (s *server) listProviders(w http.ResponseWriter, r *http.Request) {
