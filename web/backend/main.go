@@ -386,9 +386,9 @@ func findWebDir() string {
 	}
 
 	for _, dir := range []string{
-		filepath.Join("..", "dist"),
-		"dist",
-		filepath.Join("web", "dist"),
+		filepath.Join("..", "frontend", "dist"),
+		filepath.Join("frontend", "dist"),
+		filepath.Join("web", "frontend", "dist"),
 	} {
 		if _, err := os.Stat(filepath.Join(dir, "index.html")); err == nil {
 			return dir

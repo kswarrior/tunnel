@@ -2,12 +2,12 @@ FROM node:22-alpine AS frontend
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
-COPY index.html tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts ./
-COPY public ./public
-COPY src ./src
+COPY frontend/index.html frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json frontend/vite.config.ts ./
+COPY frontend/public ./public
+COPY frontend/src ./src
 
 RUN npm run build
 

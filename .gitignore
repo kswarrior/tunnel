@@ -1,5 +1,5 @@
-web/node_modules/
-web/dist/
+web/frontend/node_modules/
+web/frontend/dist/
 web/data.json
 web/backend/data.json
 web/backend/backend
