@@ -1,4 +1,4 @@
-module kstunnel/cli
+module github.com/kswarrior/tunnel/cli
 
 go 1.26.0
 
