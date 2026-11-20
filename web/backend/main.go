@@ -350,6 +350,7 @@ func (s *server) listTunnels(w http.ResponseWriter, r *http.Request) {
 type createTunnelRequest struct {
 	Name       string `json:"name"`
 	ProviderID string `json:"providerId"`
+	AgentID    string `json:"agentId"`
 	IP         string `json:"ip"`
 	Port       int    `json:"port"`
 	Type       string `json:"type"`
@@ -374,6 +375,34 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	agentID := strings.TrimSpace(body.AgentID)
+	if agentID == "" {
+		writeError(w, http.StatusBadRequest, "Agent is required.")
+		return
+	}
+
+	agent, ok := s.store.agentByID(agentID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Agent not found.")
+		return
+	}
+
+	if !agent.Authorized {
+		writeError(w, http.StatusBadRequest, "Agent is not approved yet.")
+		return
+	}
+
+	if !s.hub.connected(agent.Token) {
+		writeError(w, http.StatusBadRequest, "Agent is offline. Start the CLI and try again.")
+		return
+	}
+
+	provider, ok := s.store.providerByID(providerID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Provider not found.")
+		return
+	}
+
 	ip := strings.TrimSpace(body.IP)
 	if ip == "" {
 		ip = "localhost"
@@ -395,6 +424,7 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 	tunnel, err := s.store.addTunnel(Tunnel{
 		Name:       name,
 		ProviderID: providerID,
+		AgentID:    agentID,
 		IP:         ip,
 		Port:       body.Port,
 		Type:       tunnelType,
@@ -403,9 +433,31 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Provider not found.")
 		return
 	}
+	if errors.Is(err, errUnknownAgent) || errors.Is(err, errAgentNotAllowed) {
+		writeError(w, http.StatusBadRequest, "Agent not found or not approved.")
+		return
+	}
 	if err != nil {
 		log.Printf("create tunnel: %v", err)
 		writeError(w, http.StatusInternalServerError, "Could not create tunnel.")
+		return
+	}
+
+	command := createTunnelMessage{
+		Type: "create_tunnel",
+		Tunnel: agentTunnel{
+			ID:       tunnel.ID,
+			Name:     tunnel.Name,
+			Provider: provider.Name,
+			IP:       tunnel.IP,
+			Port:     tunnel.Port,
+			Type:     tunnel.Type,
+		},
+	}
+
+	if err := s.hub.send(agent.Token, command); err != nil {
+		s.store.deleteTunnel(tunnel.ID)
+		writeError(w, http.StatusBadGateway, "Could not reach the agent. Make sure the CLI is running.")
 		return
 	}
 
@@ -525,12 +577,16 @@ func main() {
 		log.Fatalf("load store: %v", err)
 	}
 
-	api := &server{store: dataStore}
+	api := &server{store: dataStore, hub: newAgentHub()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/providers", api.listProviders)
 	mux.HandleFunc("POST /api/providers", api.createProvider)
+	mux.HandleFunc("GET /api/agents", api.listAgents)
+	mux.HandleFunc("GET /api/agents/claim/{token}", api.getClaim)
+	mux.HandleFunc("POST /api/agents/claim/{token}", api.respondClaim)
 	mux.HandleFunc("GET /api/tunnels", api.listTunnels)
 	mux.HandleFunc("POST /api/tunnels", api.createTunnel)
+	mux.HandleFunc("/ws/agent", api.agentSocket)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Not found.")
 	})
