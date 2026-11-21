@@ -37,6 +37,7 @@ type Tunnel struct {
 	IP         string    `json:"ip"`
 	Port       int       `json:"port"`
 	Type       string    `json:"type"`
+	Slug       string    `json:"slug,omitempty"`
 	AliasPath  string    `json:"aliasPath,omitempty"`
 	PublicURL  string    `json:"publicUrl"`
 	CurrentURL string    `json:"currentUrl,omitempty"`
@@ -63,6 +64,7 @@ var (
 	errUnknownTunnel   = errors.New("tunnel not found")
 	errProviderInUse   = errors.New("provider is used by a tunnel")
 	errAgentInUse      = errors.New("agent is used by a tunnel")
+	errSlugInUse       = errors.New("slug is already used by another tunnel")
 )
 
 func newStore(path, baseURL string) (*store, error) {
@@ -127,7 +129,9 @@ func newStore(path, baseURL string) (*store, error) {
 
 func tunnelView(tunnel Tunnel, baseURL string) Tunnel {
 	view := tunnel
-	if view.AliasPath != "" {
+	if view.Slug != "" {
+		view.PublicURL = baseURL + "/s/" + view.Slug
+	} else if view.AliasPath != "" {
 		view.PublicURL = baseURL + view.AliasPath
 	}
 	return view
@@ -168,6 +172,24 @@ func newAliasPath() (string, error) {
 		return "", err
 	}
 	return "/t/" + id, nil
+}
+
+func validSlug(slug string) bool {
+	if len(slug) < 2 || len(slug) > 40 {
+		return false
+	}
+
+	for i, char := range slug {
+		switch {
+		case char >= 'a' && char <= 'z':
+		case char >= '0' && char <= '9':
+		case char == '-' && i > 0 && i < len(slug)-1:
+		default:
+			return false
+		}
+	}
+
+	return true
 }
 
 func (s *store) saveLocked() error {
@@ -462,6 +484,50 @@ func (s *store) tunnelByAlias(alias string) (Tunnel, bool) {
 	}
 
 	return Tunnel{}, false
+}
+
+func (s *store) tunnelBySlug(slug string) (Tunnel, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, tunnel := range s.state.Tunnels {
+		if tunnel.Slug == slug {
+			return tunnel, true
+		}
+	}
+
+	return Tunnel{}, false
+}
+
+func (s *store) setTunnelSlug(id, slug string) (Tunnel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Tunnels {
+		tunnel := &s.state.Tunnels[i]
+		if tunnel.ID != id {
+			continue
+		}
+
+		if slug != "" {
+			for _, other := range s.state.Tunnels {
+				if other.ID != id && other.Slug == slug {
+					return Tunnel{}, errSlugInUse
+				}
+			}
+		}
+
+		previous := *tunnel
+		tunnel.Slug = slug
+		if err := s.saveLocked(); err != nil {
+			*tunnel = previous
+			return Tunnel{}, err
+		}
+
+		return *tunnel, nil
+	}
+
+	return Tunnel{}, errUnknownTunnel
 }
 
 func (s *store) setTunnelStatus(id, status string) (Tunnel, error) {
