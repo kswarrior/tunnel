@@ -33,19 +33,16 @@ const statusLabels: Record<Tunnel['status'], string> = {
 function TunnelUrl({ tunnel }: { tunnel: Tunnel }) {
   const [copied, setCopied] = useState(false)
 
-  if (tunnel.status === 'pending') {
-    return <p className="tunnel-url-state pending">Waiting for agent...</p>
-  }
+  const stateMessage =
+    tunnel.status === 'pending'
+      ? 'Waiting for agent...'
+      : tunnel.status === 'error'
+        ? tunnel.error || 'Could not start this tunnel.'
+        : tunnel.status === 'stopped'
+          ? 'Stopped. This URL stays the same when started again.'
+          : null
 
-  if (tunnel.status === 'error') {
-    return (
-      <p className="tunnel-url-state error">
-        {tunnel.error || 'Could not start this tunnel.'}
-      </p>
-    )
-  }
-
-  if (!tunnel.publicUrl) return null
+  if (!tunnel.publicUrl && !stateMessage) return null
 
   async function copyUrl() {
     if (!tunnel.publicUrl) return
@@ -60,25 +57,32 @@ function TunnelUrl({ tunnel }: { tunnel: Tunnel }) {
   }
 
   return (
-    <div className="tunnel-url-row">
-      <a
-        className="tunnel-url"
-        href={tunnel.publicUrl}
-        target="_blank"
-        rel="noreferrer"
-        title={tunnel.publicUrl}
-      >
-        {tunnel.publicUrl}
-      </a>
-      <button
-        type="button"
-        className="icon-button tunnel-copy"
-        onClick={copyUrl}
-        aria-label="Copy tunnel URL"
-        title="Copy tunnel URL"
-      >
-        {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
-      </button>
+    <div className="tunnel-url-block">
+      {tunnel.publicUrl ? (
+        <div className="tunnel-url-row">
+          <a
+            className="tunnel-url"
+            href={tunnel.publicUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={tunnel.publicUrl}
+          >
+            {tunnel.publicUrl}
+          </a>
+          <button
+            type="button"
+            className="icon-button tunnel-copy"
+            onClick={copyUrl}
+            aria-label="Copy tunnel URL"
+            title="Copy tunnel URL"
+          >
+            {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+          </button>
+        </div>
+      ) : null}
+      {stateMessage ? (
+        <p className={`tunnel-url-state ${tunnel.status}`}>{stateMessage}</p>
+      ) : null}
     </div>
   )
 }
@@ -91,6 +95,8 @@ export function Tunnels() {
   const [isAdding, setIsAdding] = useState(false)
   const [editing, setEditing] = useState<Tunnel | null>(null)
   const [deleting, setDeleting] = useState<Tunnel | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     let active = true
@@ -145,6 +151,33 @@ export function Tunnels() {
     (agents ?? []).map((agent) => [agent.id, agent.name]),
   )
 
+  async function runAction(
+    id: string,
+    action: (id: string) => Promise<Tunnel>,
+    message: string,
+  ) {
+    setBusyId(id)
+    setNotice('')
+
+    try {
+      const updated = await action(id)
+      setTunnels((current) =>
+        current?.map((tunnel) =>
+          tunnel.id === updated.id ? updated : tunnel,
+        ) ?? null,
+      )
+      setNotice(message)
+    } catch (requestError) {
+      setNotice(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Could not update tunnel.',
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div className="page">
       <PageHeader
@@ -161,6 +194,12 @@ export function Tunnels() {
           </button>
         }
       />
+
+      {notice ? (
+        <p className="action-notice" role="status">
+          {notice}
+        </p>
+      ) : null}
 
       {error ? (
         <div className="empty-state">
@@ -224,11 +263,60 @@ export function Tunnels() {
                 <TunnelUrl tunnel={tunnel} />
               </div>
               <div className="card-footer">
-                <CardMenu
-                  label={`Actions for ${tunnel.name}`}
-                  onEdit={() => setEditing(tunnel)}
-                  onDelete={() => setDeleting(tunnel)}
-                />
+                <div className="card-actions">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    disabled={
+                      busyId === tunnel.id ||
+                      tunnel.status === 'active' ||
+                      tunnel.status === 'pending'
+                    }
+                    onClick={() =>
+                      runAction(
+                        tunnel.id,
+                        stopTunnel,
+                        `"${tunnel.name}" stopped. The URL is unchanged.`,
+                      )
+                    }
+                    aria-label={`Stop ${tunnel.name}`}
+                  >
+                    <StopIcon size={14} />
+                    Stop
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={
+                      busyId === tunnel.id ||
+                      tunnel.status === 'active' ||
+                      tunnel.status === 'pending'
+                    }
+                    onClick={() =>
+                      runAction(
+                        tunnel.id,
+                        startTunnel,
+                        `"${tunnel.name}" is starting.`,
+                      )
+                    }
+                    aria-label={`Start ${tunnel.name}`}
+                  >
+                    <PlayIcon size={14} />
+                    Start
+                  </button>
+                  <CardMenu
+                    label={`Actions for ${tunnel.name}`}
+                    onEdit={() => setEditing(tunnel)}
+                    onDelete={() => setDeleting(tunnel)}
+                    onReconfigure={() =>
+                      runAction(
+                        tunnel.id,
+                        reconfigureTunnelURL,
+                        `"${tunnel.name}" has a new URL.`,
+                      )
+                    }
+                  />
+                </div>
               </div>
             </article>
           ))}
