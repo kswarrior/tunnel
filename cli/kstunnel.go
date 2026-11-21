@@ -23,7 +23,7 @@ import (
 
 const (
 	// Version is the library and CLI version.
-	Version = "0.2.0"
+	Version = "1.0.0"
 
 	// DefaultConnectionURL points at the shared connection.json file.
 	DefaultConnectionURL = "https://raw.githubusercontent.com/kswarrior/tunnel/refs/heads/main/connection.json"
