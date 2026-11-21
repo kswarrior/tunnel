@@ -65,7 +65,7 @@ var (
 	errAgentInUse      = errors.New("agent is used by a tunnel")
 )
 
-func newStore(path string) (*store, error) {
+func newStore(path, baseURL string) (*store, error) {
 	s := &store{path: path}
 
 	data, err := os.ReadFile(path)
@@ -83,9 +83,26 @@ func newStore(path string) (*store, error) {
 		if s.state.Tunnels == nil {
 			s.state.Tunnels = []Tunnel{}
 		}
+
+		changed := false
 		for i := range s.state.Tunnels {
-			if s.state.Tunnels[i].Status == "" {
-				s.state.Tunnels[i].Status = "active"
+			tunnel := &s.state.Tunnels[i]
+			if tunnel.Status == "" {
+				tunnel.Status = "active"
+				changed = true
+			}
+			if tunnel.AliasPath == "" {
+				tunnel.AliasPath = "/t/" + tunnel.ID
+				if tunnel.CurrentURL == "" && strings.HasPrefix(tunnel.PublicURL, "http") {
+					tunnel.CurrentURL = tunnel.PublicURL
+				}
+				changed = true
+			}
+			tunnel.PublicURL = baseURL + tunnel.AliasPath
+		}
+		if changed {
+			if err := s.saveLocked(); err != nil {
+				return nil, err
 			}
 		}
 		return s, nil
@@ -106,6 +123,51 @@ func newStore(path string) (*store, error) {
 	default:
 		return nil, fmt.Errorf("read data file: %w", err)
 	}
+}
+
+func tunnelView(tunnel Tunnel, baseURL string) Tunnel {
+	view := tunnel
+	if view.AliasPath != "" {
+		view.PublicURL = baseURL + view.AliasPath
+	}
+	return view
+}
+
+func tunnelViews(tunnels []Tunnel, baseURL string) []Tunnel {
+	views := make([]Tunnel, len(tunnels))
+	for i, tunnel := range tunnels {
+		views[i] = tunnelView(tunnel, baseURL)
+	}
+	return views
+}
+
+func publicBaseURL(r *http.Request) string {
+	if configured := strings.TrimSpace(os.Getenv("KS_PUBLIC_URL")); configured != "" {
+		return strings.TrimRight(configured, "/")
+	}
+
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
+		scheme = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+
+	host := strings.TrimSpace(r.Host)
+	if host == "" {
+		host = "localhost:" + envOr("PORT", "8080")
+	}
+
+	return scheme + "://" + host
+}
+
+func newAliasPath() (string, error) {
+	id, err := newID()
+	if err != nil {
+		return "", err
+	}
+	return "/t/" + id, nil
 }
 
 func (s *store) saveLocked() error {
@@ -298,6 +360,8 @@ func (s *store) addTunnel(tunnel Tunnel) (Tunnel, error) {
 	tunnel.ID = id
 	tunnel.CreatedAt = time.Now().UTC()
 	tunnel.Status = "pending"
+	tunnel.AliasPath = "/t/" + id
+	tunnel.PublicURL = tunnel.AliasPath
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -347,11 +411,11 @@ func (s *store) setTunnelResult(id, publicURL, errorMessage string) {
 		if errorMessage != "" {
 			s.state.Tunnels[i].Status = "error"
 			s.state.Tunnels[i].Error = errorMessage
-			s.state.Tunnels[i].PublicURL = ""
+			s.state.Tunnels[i].CurrentURL = ""
 		} else {
 			s.state.Tunnels[i].Status = "active"
 			s.state.Tunnels[i].Error = ""
-			s.state.Tunnels[i].PublicURL = publicURL
+			s.state.Tunnels[i].CurrentURL = publicURL
 		}
 
 		if err := s.saveLocked(); err != nil {
@@ -384,6 +448,80 @@ func (s *store) failPendingTunnelsForAgent(agentID, reason string) {
 	}
 }
 
+func (s *store) tunnelByAlias(alias string) (Tunnel, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, tunnel := range s.state.Tunnels {
+		if tunnel.AliasPath == alias {
+			return tunnel, true
+		}
+	}
+
+	return Tunnel{}, false
+}
+
+func (s *store) setTunnelStatus(id, status string) (Tunnel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Tunnels {
+		if s.state.Tunnels[i].ID != id {
+			continue
+		}
+
+		previous := s.state.Tunnels[i]
+		tunnel := previous
+		tunnel.Status = status
+		tunnel.Error = ""
+		tunnel.CurrentURL = ""
+
+		s.state.Tunnels[i] = tunnel
+		if err := s.saveLocked(); err != nil {
+			s.state.Tunnels[i] = previous
+			return Tunnel{}, err
+		}
+
+		return tunnel, nil
+	}
+
+	return Tunnel{}, errUnknownTunnel
+}
+
+func (s *store) rotateTunnelAlias(id string) (Tunnel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Tunnels {
+		if s.state.Tunnels[i].ID != id {
+			continue
+		}
+
+		aliasPath, err := newAliasPath()
+		if err != nil {
+			return Tunnel{}, err
+		}
+
+		previous := s.state.Tunnels[i]
+		tunnel := previous
+		tunnel.AliasPath = aliasPath
+		tunnel.PublicURL = aliasPath
+		tunnel.CurrentURL = ""
+		tunnel.Status = "pending"
+		tunnel.Error = ""
+
+		s.state.Tunnels[i] = tunnel
+		if err := s.saveLocked(); err != nil {
+			s.state.Tunnels[i] = previous
+			return Tunnel{}, err
+		}
+
+		return tunnel, nil
+	}
+
+	return Tunnel{}, errUnknownTunnel
+}
+
 func (s *store) updateTunnel(id string, update Tunnel) (Tunnel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -402,7 +540,7 @@ func (s *store) updateTunnel(id string, update Tunnel) (Tunnel, error) {
 		tunnel.IP = update.IP
 		tunnel.Port = update.Port
 		tunnel.Type = update.Type
-		tunnel.PublicURL = ""
+		tunnel.CurrentURL = ""
 		tunnel.Status = "pending"
 		tunnel.Error = ""
 
@@ -582,7 +720,7 @@ func (s *server) createAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) listTunnels(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.tunnels())
+	writeJSON(w, http.StatusOK, tunnelViews(s.store.tunnels(), publicBaseURL(r)))
 }
 
 type createTunnelRequest struct {
