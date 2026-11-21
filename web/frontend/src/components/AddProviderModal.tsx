@@ -1,24 +1,28 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { createProvider } from '../api'
+import { createProvider, updateProvider } from '../api'
 import type { Provider } from '../types'
 import { AlertIcon } from './Icons'
 import { Field } from './Field'
 import { Modal } from './Modal'
 
 type AddProviderModalProps = {
+  provider?: Provider
   onClose: () => void
-  onCreated: (provider: Provider) => void
+  onSaved: (provider: Provider) => void
 }
 
 export function AddProviderModal({
+  provider,
   onClose,
-  onCreated,
+  onSaved,
 }: AddProviderModalProps) {
-  const [name, setName] = useState('')
+  const [name, setName] = useState(provider?.name ?? '')
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const isEditing = Boolean(provider)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -35,21 +39,25 @@ export function AddProviderModal({
     setSubmitting(true)
 
     try {
-      const provider = await createProvider(trimmedName)
-      onCreated(provider)
+      const saved = provider
+        ? await updateProvider(provider.id, trimmedName)
+        : await createProvider(trimmedName)
+      onSaved(saved)
       onClose()
     } catch (requestError) {
       setFormError(
         requestError instanceof Error
           ? requestError.message
-          : 'Could not add provider.',
+          : isEditing
+            ? 'Could not update provider.'
+            : 'Could not add provider.',
       )
       setSubmitting(false)
     }
   }
 
   return (
-    <Modal title="Add provider" onClose={onClose}>
+    <Modal title={isEditing ? 'Edit provider' : 'Add provider'} onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate>
         <Field label="Name" htmlFor="provider-name" error={error}>
           <input
@@ -84,7 +92,13 @@ export function AddProviderModal({
             className="btn btn-primary"
             disabled={submitting}
           >
-            {submitting ? 'Adding...' : 'Add provider'}
+            {submitting
+              ? isEditing
+                ? 'Saving...'
+                : 'Adding...'
+              : isEditing
+                ? 'Save changes'
+                : 'Add provider'}
           </button>
         </div>
       </form>

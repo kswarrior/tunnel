@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { createTunnel } from '../api'
+import { createTunnel, updateTunnel } from '../api'
 import type { Agent, AgentStatus, Provider, Tunnel, TunnelType } from '../types'
 import { AgentIcon, AlertIcon, CloudIcon } from './Icons'
 import { Dropdown } from './Dropdown'
@@ -11,8 +11,9 @@ import { Modal } from './Modal'
 type AddTunnelModalProps = {
   providers: Provider[]
   agents: Agent[]
+  tunnel?: Tunnel
   onClose: () => void
-  onCreated: (tunnel: Tunnel) => void
+  onSaved: (tunnel: Tunnel) => void
 }
 
 type FieldErrors = Partial<
@@ -39,18 +40,25 @@ function defaultAgentId(agents: Agent[]) {
 export function AddTunnelModal({
   providers,
   agents,
+  tunnel,
   onClose,
-  onCreated,
+  onSaved,
 }: AddTunnelModalProps) {
-  const [name, setName] = useState('')
-  const [providerId, setProviderId] = useState(providers[0]?.id ?? '')
-  const [agentId, setAgentId] = useState(defaultAgentId(agents))
-  const [ip, setIp] = useState('localhost')
-  const [port, setPort] = useState('')
-  const [type, setType] = useState<TunnelType>('https')
+  const [name, setName] = useState(tunnel?.name ?? '')
+  const [providerId, setProviderId] = useState(
+    tunnel?.providerId ?? providers[0]?.id ?? '',
+  )
+  const [agentId, setAgentId] = useState(
+    tunnel?.agentId ?? defaultAgentId(agents),
+  )
+  const [ip, setIp] = useState(tunnel?.ip ?? 'localhost')
+  const [port, setPort] = useState(tunnel ? String(tunnel.port) : '')
+  const [type, setType] = useState<TunnelType>(tunnel?.type ?? 'https')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const isEditing = Boolean(tunnel)
 
   const providerOptions: DropdownOption[] = providers.map((provider) => ({
     value: provider.id,
@@ -133,28 +141,33 @@ export function AddTunnelModal({
     setSubmitting(true)
 
     try {
-      const tunnel = await createTunnel({
+      const input = {
         name: trimmedName,
         providerId,
         agentId,
         ip: trimmedIp,
         port: portNumber,
         type,
-      })
-      onCreated(tunnel)
+      }
+      const saved = tunnel
+        ? await updateTunnel(tunnel.id, input)
+        : await createTunnel(input)
+      onSaved(saved)
       onClose()
     } catch (requestError) {
       setFormError(
         requestError instanceof Error
           ? requestError.message
-          : 'Could not add tunnel.',
+          : isEditing
+            ? 'Could not update tunnel.'
+            : 'Could not add tunnel.',
       )
       setSubmitting(false)
     }
   }
 
   return (
-    <Modal title="Add tunnel" onClose={onClose}>
+    <Modal title={isEditing ? 'Edit tunnel' : 'Add tunnel'} onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate>
         <Field label="Name" htmlFor="tunnel-name" error={errors.name}>
           <input
@@ -273,7 +286,13 @@ export function AddTunnelModal({
             className="btn btn-primary"
             disabled={submitting || agentOptions.length === 0}
           >
-            {submitting ? 'Adding...' : 'Add tunnel'}
+            {submitting
+              ? isEditing
+                ? 'Saving...'
+                : 'Adding...'
+              : isEditing
+                ? 'Save changes'
+                : 'Add tunnel'}
           </button>
         </div>
       </form>

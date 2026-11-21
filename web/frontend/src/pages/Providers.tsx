@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { getProviders } from '../api'
+import { deleteProvider, getProviders } from '../api'
 import type { Provider } from '../types'
 import { AddProviderModal } from '../components/AddProviderModal'
+import { CardMenu } from '../components/CardMenu'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { AlertIcon, CloudIcon, PlusIcon } from '../components/Icons'
 import { PageHeader } from '../components/PageHeader'
 
@@ -9,6 +11,8 @@ export function Providers() {
   const [providers, setProviders] = useState<Provider[] | null>(null)
   const [error, setError] = useState('')
   const [isAdding, setIsAdding] = useState(false)
+  const [editing, setEditing] = useState<Provider | null>(null)
+  const [deleting, setDeleting] = useState<Provider | null>(null)
 
   useEffect(() => {
     let active = true
@@ -77,21 +81,56 @@ export function Providers() {
         <div className="card-grid">
           {providers.map((provider) => (
             <article className="card provider-card" key={provider.id}>
-              <span className="card-icon">
-                <CloudIcon size={20} />
-              </span>
-              <h2 className="card-title">{provider.name}</h2>
+              <div className="provider-head">
+                <span className="card-icon">
+                  <CloudIcon size={20} />
+                </span>
+                <h2 className="card-title">{provider.name}</h2>
+              </div>
+              <div className="card-footer">
+                <CardMenu
+                  label={`Actions for ${provider.name}`}
+                  onEdit={() => setEditing(provider)}
+                  onDelete={() => setDeleting(provider)}
+                />
+              </div>
             </article>
           ))}
         </div>
       )}
 
-      {isAdding ? (
+      {isAdding || editing ? (
         <AddProviderModal
-          onClose={() => setIsAdding(false)}
-          onCreated={(provider) =>
-            setProviders((current) => [...(current ?? []), provider])
+          provider={editing ?? undefined}
+          onClose={() => {
+            setIsAdding(false)
+            setEditing(null)
+          }}
+          onSaved={(saved) =>
+            setProviders((current) =>
+              current
+                ? current.map((provider) =>
+                    provider.id === saved.id ? saved : provider,
+                  )
+                : [saved],
+            )
           }
+        />
+      ) : null}
+
+      {deleting ? (
+        <ConfirmModal
+          title="Delete provider"
+          message={`Delete "${deleting.name}"? This cannot be undone.`}
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            await deleteProvider(deleting.id)
+            setProviders(
+              (current) =>
+                current?.filter((provider) => provider.id !== deleting.id) ??
+                null,
+            )
+          }}
         />
       ) : null}
     </div>

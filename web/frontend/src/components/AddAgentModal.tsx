@@ -1,21 +1,24 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { createAgent } from '../api'
+import { createAgent, updateAgent } from '../api'
 import type { Agent } from '../types'
 import { AlertIcon } from './Icons'
 import { Field } from './Field'
 import { Modal } from './Modal'
 
 type AddAgentModalProps = {
+  agent?: Agent
   onClose: () => void
-  onCreated: (agent: Agent) => void
+  onSaved: (agent: Agent) => void
 }
 
-export function AddAgentModal({ onClose, onCreated }: AddAgentModalProps) {
-  const [name, setName] = useState('')
+export function AddAgentModal({ agent, onClose, onSaved }: AddAgentModalProps) {
+  const [name, setName] = useState(agent?.name ?? '')
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const isEditing = Boolean(agent)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -32,29 +35,35 @@ export function AddAgentModal({ onClose, onCreated }: AddAgentModalProps) {
     setSubmitting(true)
 
     try {
-      const agent = await createAgent(trimmedName)
-      onCreated(agent)
+      const saved = agent
+        ? await updateAgent(agent.id, trimmedName)
+        : await createAgent(trimmedName)
+      onSaved(saved)
       onClose()
     } catch (requestError) {
       setFormError(
         requestError instanceof Error
           ? requestError.message
-          : 'Could not add agent.',
+          : isEditing
+            ? 'Could not update agent.'
+            : 'Could not add agent.',
       )
       setSubmitting(false)
     }
   }
 
   return (
-    <Modal title="Add agent" onClose={onClose}>
+    <Modal title={isEditing ? 'Edit agent' : 'Add agent'} onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate>
-        <div className="agent-form-guide">
-          <p>
-            After adding, you will get a token. Run the CLI with that token on
-            the machine you want to expose:
-          </p>
-          <code className="code-block">./kstunnel --token=&lt;token&gt;</code>
-        </div>
+        {isEditing ? null : (
+          <div className="agent-form-guide">
+            <p>
+              After adding, you will get a token. Run the CLI with that token on
+              the machine you want to expose:
+            </p>
+            <code className="code-block">./kstunnel --token=&lt;token&gt;</code>
+          </div>
+        )}
 
         <Field label="Name" htmlFor="agent-name" error={error}>
           <input
@@ -89,7 +98,13 @@ export function AddAgentModal({ onClose, onCreated }: AddAgentModalProps) {
             className="btn btn-primary"
             disabled={submitting}
           >
-            {submitting ? 'Adding...' : 'Add agent'}
+            {submitting
+              ? isEditing
+                ? 'Saving...'
+                : 'Adding...'
+              : isEditing
+                ? 'Save changes'
+                : 'Add agent'}
           </button>
         </div>
       </form>
