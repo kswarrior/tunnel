@@ -160,6 +160,19 @@ func (s *store) tunnels() []Tunnel {
 	return result
 }
 
+func (s *store) tunnelByID(id string) (Tunnel, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, tunnel := range s.state.Tunnels {
+		if tunnel.ID == id {
+			return tunnel, true
+		}
+	}
+
+	return Tunnel{}, false
+}
+
 func (s *store) addProvider(name string) (Provider, error) {
 	id, err := newID()
 	if err != nil {
@@ -369,7 +382,7 @@ func (s *store) failPendingTunnelsForAgent(agentID, reason string) {
 	}
 }
 
-func (s *store) deleteTunnel(id string) {
+func (s *store) updateTunnel(id string, update Tunnel) (Tunnel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -378,12 +391,55 @@ func (s *store) deleteTunnel(id string) {
 			continue
 		}
 
+		previous := s.state.Tunnels[i]
+
+		tunnel := previous
+		tunnel.Name = update.Name
+		tunnel.ProviderID = update.ProviderID
+		tunnel.AgentID = update.AgentID
+		tunnel.IP = update.IP
+		tunnel.Port = update.Port
+		tunnel.Type = update.Type
+		tunnel.PublicURL = ""
+		tunnel.Status = "pending"
+		tunnel.Error = ""
+
+		s.state.Tunnels[i] = tunnel
+		if err := s.saveLocked(); err != nil {
+			s.state.Tunnels[i] = previous
+			return Tunnel{}, err
+		}
+
+		return tunnel, nil
+	}
+
+	return Tunnel{}, errUnknownTunnel
+}
+
+func (s *store) deleteTunnel(id string) (Tunnel, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Tunnels {
+		if s.state.Tunnels[i].ID != id {
+			continue
+		}
+
+		removed := s.state.Tunnels[i]
+
+		previous := make([]Tunnel, len(s.state.Tunnels))
+		copy(previous, s.state.Tunnels)
+
 		s.state.Tunnels = append(s.state.Tunnels[:i], s.state.Tunnels[i+1:]...)
 		if err := s.saveLocked(); err != nil {
-			log.Printf("delete tunnel: %v", err)
+			s.state.Tunnels = previous
+			return Tunnel{}, false
 		}
-		return
+
+		return removed, true
 	}
+
+	return Tunnel{}, false
 }
 
 func newID() (string, error) {
@@ -444,6 +500,56 @@ func (s *server) createProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, provider)
+}
+
+func (s *server) updateProvider(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	var body createProviderRequest
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "Provider name is required.")
+		return
+	}
+
+	provider, err := s.store.updateProvider(id, name)
+	if errors.Is(err, errUnknownProvider) {
+		writeError(w, http.StatusNotFound, "Provider not found.")
+		return
+	}
+	if err != nil {
+		log.Printf("update provider: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not update provider.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, provider)
+}
+
+func (s *server) deleteProvider(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	err := s.store.deleteProvider(id)
+	if errors.Is(err, errUnknownProvider) {
+		writeError(w, http.StatusNotFound, "Provider not found.")
+		return
+	}
+	if errors.Is(err, errProviderInUse) {
+		writeError(w, http.StatusConflict, "Provider is used by a tunnel. Delete those tunnels first.")
+		return
+	}
+	if err != nil {
+		log.Printf("delete provider: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not delete provider.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 type createAgentRequest struct {

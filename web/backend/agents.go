@@ -1,8 +1,11 @@
 package main
 
 import (
+	"errors"
+	"log"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -113,6 +116,61 @@ func (s *store) connectAgent(token, name string) (Agent, error) {
 	return Agent{}, errUnknownAgent
 }
 
+func (s *store) updateAgent(id, name string) (Agent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Agents {
+		agent := &s.state.Agents[i]
+		if agent.ID != id {
+			continue
+		}
+
+		previousName := agent.Name
+		agent.Name = name
+
+		if err := s.saveLocked(); err != nil {
+			agent.Name = previousName
+			return Agent{}, err
+		}
+
+		return *agent, nil
+	}
+
+	return Agent{}, errUnknownAgent
+}
+
+func (s *store) deleteAgent(id string) (Agent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Agents {
+		if s.state.Agents[i].ID != id {
+			continue
+		}
+
+		for _, tunnel := range s.state.Tunnels {
+			if tunnel.AgentID == id {
+				return Agent{}, errAgentInUse
+			}
+		}
+
+		previous := make([]Agent, len(s.state.Agents))
+		copy(previous, s.state.Agents)
+
+		removed := s.state.Agents[i]
+		s.state.Agents = append(s.state.Agents[:i], s.state.Agents[i+1:]...)
+		if err := s.saveLocked(); err != nil {
+			s.state.Agents = previous
+			return Agent{}, err
+		}
+
+		return removed, nil
+	}
+
+	return Agent{}, errUnknownAgent
+}
+
 func (s *server) listAgents(w http.ResponseWriter, r *http.Request) {
 	agents := s.store.agents()
 	views := make([]agentView, 0, len(agents))
@@ -126,4 +184,55 @@ func (s *server) listAgents(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusOK, views)
+}
+
+func (s *server) updateAgent(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	var body createAgentRequest
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "Agent name is required.")
+		return
+	}
+
+	agent, err := s.store.updateAgent(id, name)
+	if errors.Is(err, errUnknownAgent) {
+		writeError(w, http.StatusNotFound, "Agent not found.")
+		return
+	}
+	if err != nil {
+		log.Printf("update agent: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not update agent.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, newAgentView(agent, s.hub.connected(agent.Token)))
+}
+
+func (s *server) deleteAgent(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	agent, err := s.store.deleteAgent(id)
+	if errors.Is(err, errUnknownAgent) {
+		writeError(w, http.StatusNotFound, "Agent not found.")
+		return
+	}
+	if errors.Is(err, errAgentInUse) {
+		writeError(w, http.StatusConflict, "Agent is used by a tunnel. Delete those tunnels first.")
+		return
+	}
+	if err != nil {
+		log.Printf("delete agent: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not delete agent.")
+		return
+	}
+
+	s.hub.close(agent.Token)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

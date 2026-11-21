@@ -157,6 +157,11 @@ type createTunnelMessage struct {
 	Tunnel agentTunnel `json:"tunnel"`
 }
 
+type tunnelActionMessage struct {
+	Type     string `json:"type"`
+	TunnelID string `json:"tunnelId"`
+}
+
 func validAgentToken(token string) bool {
 	if len(token) < 6 || len(token) > 64 {
 		return false
