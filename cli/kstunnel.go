@@ -5,7 +5,6 @@ package kstunnel
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,15 +36,17 @@ const (
 
 // Options configures a KS Tunnel agent session.
 type Options struct {
+	// Token is the agent token created in the web app.
+	Token string
 	// Server overrides the web app URL from connection.json.
 	Server string
-	// Name is the agent name. Defaults to the machine hostname.
+	// Name optionally overrides the agent name from the web app.
 	Name string
 	// ConnectionURL is the connection.json location.
 	ConnectionURL string
 }
 
-var errRejected = errors.New("agent request rejected")
+var errInvalidToken = errors.New("invalid agent token")
 
 type connectionConfig struct {
 	URL    string `json:"url"`
@@ -121,19 +122,12 @@ func Run(ctx context.Context, options Options) error {
 
 	base := resolveServer(options.Server, connectionURL)
 
-	token, err := newToken(10)
-	if err != nil {
-		return fmt.Errorf("generate token: %w", err)
+	token := strings.TrimSpace(options.Token)
+	if token == "" {
+		return errors.New("agent token is required")
 	}
 
 	name := strings.TrimSpace(options.Name)
-	if name == "" {
-		host, err := os.Hostname()
-		if err != nil || strings.TrimSpace(host) == "" {
-			host = "agent"
-		}
-		name = host
-	}
 
 	holder := &clientHolder{}
 	manager := newTunnelManager(holder)
@@ -147,9 +141,8 @@ func Run(ctx context.Context, options Options) error {
 		}
 
 		err := runAgent(ctx, base, token, name, holder, manager)
-		if errors.Is(err, errRejected) {
-			log.Print("agent request was cancelled in the web app")
-			return nil
+		if errors.Is(err, errInvalidToken) {
+			return err
 		}
 		if ctx.Err() != nil {
 			return nil
@@ -216,21 +209,6 @@ func normalizeServer(raw string) string {
 	return strings.TrimRight(raw, "/")
 }
 
-func newToken(length int) (string, error) {
-	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
-
-	buffer := make([]byte, length)
-	if _, err := rand.Read(buffer); err != nil {
-		return "", err
-	}
-
-	for i := range buffer {
-		buffer[i] = alphabet[int(buffer[i])%len(alphabet)]
-	}
-
-	return string(buffer), nil
-}
-
 func runAgent(ctx context.Context, base, token, name string, holder *clientHolder, manager *tunnelManager) error {
 	wsURL, err := buildWebSocketURL(base, token, name)
 	if err != nil {
@@ -246,14 +224,16 @@ func runAgent(ctx context.Context, base, token, name string, holder *clientHolde
 	if err != nil {
 		if response != nil {
 			response.Body.Close()
+			switch response.StatusCode {
+			case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+				return fmt.Errorf("%w: create an agent in the web app to get a valid token", errInvalidToken)
+			}
 		}
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer conn.Close()
 
-	claimURL := strings.TrimRight(base, "/") + "/token=" + token
-	fmt.Printf("\nConnected to %s\n", base)
-	fmt.Printf("Open this link to approve this agent:\n\n  %s\n\nWaiting for approval...\n\n", claimURL)
+	fmt.Printf("\nConnected to %s\n\n", base)
 
 	client := &wsClient{conn: conn}
 	holder.set(client)
@@ -290,12 +270,6 @@ func (c *wsClient) readLoop(manager *tunnelManager) error {
 		}
 
 		switch message.Type {
-		case "pending":
-			log.Print("waiting for approval in the web app")
-		case "approved":
-			log.Print("agent approved; ready to create tunnels")
-		case "rejected":
-			return errRejected
 		case "create_tunnel":
 			manager.start(tunnelRequest{
 				ID:       message.Tunnel.ID,
@@ -329,7 +303,9 @@ func buildWebSocketURL(base, token, name string) (string, error) {
 
 	query := parsed.Query()
 	query.Set("token", token)
-	query.Set("name", name)
+	if name != "" {
+		query.Set("name", name)
+	}
 	parsed.RawQuery = query.Encode()
 
 	return parsed.String(), nil

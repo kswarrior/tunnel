@@ -28,15 +28,12 @@ const typeOptions: DropdownOption[] = [
 
 const agentStatusLabels: Record<AgentStatus, string> = {
   online: 'Online',
-  pending: 'Pending approval',
   offline: 'Offline',
-  rejected: 'Rejected',
 }
 
 function defaultAgentId(agents: Agent[]) {
-  const usable = agents.filter((agent) => agent.authorized)
-  const online = usable.find((agent) => agent.status === 'online')
-  return online?.id ?? usable[0]?.id ?? ''
+  const online = agents.find((agent) => agent.status === 'online')
+  return online?.id ?? agents[0]?.id ?? ''
 }
 
 export function AddTunnelModal({
@@ -61,13 +58,11 @@ export function AddTunnelModal({
     icon: <CloudIcon size={15} />,
   }))
 
-  const agentOptions: DropdownOption[] = agents
-    .filter((agent) => agent.authorized)
-    .map((agent) => ({
-      value: agent.id,
-      label: `${agent.name} · ${agentStatusLabels[agent.status]}`,
-      icon: <AgentIcon size={15} />,
-    }))
+  const agentOptions: DropdownOption[] = agents.map((agent) => ({
+    value: agent.id,
+    label: `${agent.name} · ${agentStatusLabels[agent.status]}`,
+    icon: <AgentIcon size={15} />,
+  }))
 
   function clearError(key: keyof FieldErrors) {
     setErrors((current) => {
@@ -88,7 +83,7 @@ export function AddTunnelModal({
     }
 
     if (agentOptions.length === 0) {
-      setFormError('Run ./kstunnel and approve an agent before creating a tunnel.')
+      setFormError('Add an agent on the Agents page before creating a tunnel.')
       return
     }
 
@@ -106,7 +101,8 @@ export function AddTunnelModal({
     } else {
       const agent = agents.find((item) => item.id === agentId)
       if (!agent || agent.status !== 'online') {
-        nextErrors.agentId = 'Agent is offline. Start the CLI and try again.'
+        nextErrors.agentId =
+          'Agent is offline. Start the CLI with its token and try again.'
       }
     }
 
@@ -187,7 +183,7 @@ export function AddTunnelModal({
               clearError('agentId')
             }}
             placeholder={
-              agentOptions.length === 0 ? 'No approved agents' : 'Select an agent'
+              agentOptions.length === 0 ? 'No agents' : 'Select an agent'
             }
             invalid={Boolean(errors.agentId)}
             label="Agent"
