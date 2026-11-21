@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react'
 import { getAgents } from '../api'
 import type { Agent, AgentStatus } from '../types'
-import { AgentIcon, AlertIcon } from '../components/Icons'
+import { AddAgentModal } from '../components/AddAgentModal'
+import {
+  AgentIcon,
+  AlertIcon,
+  CheckIcon,
+  CopyIcon,
+  PlusIcon,
+} from '../components/Icons'
 import { PageHeader } from '../components/PageHeader'
 
 const statusLabels: Record<AgentStatus, string> = {
   online: 'Online',
-  pending: 'Pending approval',
   offline: 'Offline',
-  rejected: 'Rejected',
 }
 
 function formatDate(value: string) {
@@ -17,9 +22,41 @@ function formatDate(value: string) {
   return date.toLocaleString()
 }
 
+function AgentToken({ token }: { token: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copyToken() {
+    try {
+      await navigator.clipboard.writeText(token)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard access can fail outside a secure context.
+    }
+  }
+
+  return (
+    <div className="agent-token-row">
+      <code className="agent-token" title={token}>
+        {token}
+      </code>
+      <button
+        type="button"
+        className="icon-button agent-token-copy"
+        onClick={copyToken}
+        aria-label="Copy agent token"
+        title="Copy agent token"
+      >
+        {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+      </button>
+    </div>
+  )
+}
+
 export function Agents() {
   const [agents, setAgents] = useState<Agent[] | null>(null)
   const [error, setError] = useState('')
+  const [isAdding, setIsAdding] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -51,7 +88,19 @@ export function Agents() {
 
   return (
     <div className="page">
-      <PageHeader title="Agents" />
+      <PageHeader
+        title="Agents"
+        action={
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setIsAdding(true)}
+          >
+            <PlusIcon size={16} />
+            Add
+          </button>
+        }
+      />
 
       <div className="card agent-guide">
         <span className="card-icon">
@@ -60,10 +109,10 @@ export function Agents() {
         <div>
           <h2 className="card-title">Connect a CLI</h2>
           <p className="agent-guide-text">
-            Run the agent on the machine you want to expose. It prints a claim
-            link; open that link to approve the agent.
+            Add an agent to get a token, then run the CLI with that token on the
+            machine you want to expose.
           </p>
-          <code className="code-block">./kstunnel</code>
+          <code className="code-block">./kstunnel --token=&lt;token&gt;</code>
         </div>
       </div>
 
@@ -90,7 +139,7 @@ export function Agents() {
             <AgentIcon size={22} />
           </span>
           <h2>No agents yet</h2>
-          <p>Run ./kstunnel and approve the claim link to add an agent.</p>
+          <p>Add an agent to get a token and connect the CLI.</p>
         </div>
       ) : (
         <div className="card-grid">
@@ -112,11 +161,21 @@ export function Agents() {
                     ? `Last connected ${formatDate(agent.connectedAt)}`
                     : `Added ${formatDate(agent.createdAt)}`}
                 </p>
+                <AgentToken token={agent.token} />
               </div>
             </article>
           ))}
         </div>
       )}
+
+      {isAdding ? (
+        <AddAgentModal
+          onClose={() => setIsAdding(false)}
+          onCreated={(agent) =>
+            setAgents((current) => [agent, ...(current ?? [])])
+          }
+        />
+      ) : null}
     </div>
   )
 }

@@ -4,13 +4,13 @@ export type Provider = {
   createdAt: string
 }
 
-export type AgentStatus = 'pending' | 'online' | 'offline' | 'rejected'
+export type AgentStatus = 'online' | 'offline'
 
 export type Agent = {
   id: string
   name: string
+  token: string
   status: AgentStatus
-  authorized: boolean
   connected: boolean
   createdAt: string
   connectedAt?: string
@@ -42,5 +42,3 @@ export type NewTunnel = {
   port: number
   type: TunnelType
 }
-
-export type ClaimAction = 'allow' | 'cancel'

@@ -178,9 +178,18 @@ func (s *server) agentSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	agent, ok := s.store.agentByToken(token)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Invalid agent token. Create an agent in the web app to get a token.")
+		return
+	}
+
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if len(name) > 64 {
 		name = name[:64]
+	}
+	if name == "" {
+		name = agent.Name
 	}
 	if name == "" {
 		name = "agent-" + token[:6]
@@ -192,16 +201,7 @@ func (s *server) agentSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := s.store.connectAgent(token, name)
-	if errors.Is(err, errAgentRejected) {
-		_ = ws.WriteControl(
-			websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "Agent request rejected"),
-			time.Now().Add(time.Second),
-		)
-		_ = ws.Close()
-		return
-	}
+	agent, err = s.store.connectAgent(token, name)
 	if err != nil {
 		log.Printf("connect agent: %v", err)
 		_ = ws.Close()
@@ -214,16 +214,6 @@ func (s *server) agentSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("agent connected: %s (%s)", agent.Name, agent.ID)
-
-	if agent.Authorized {
-		if err := conn.writeJSON(map[string]string{"type": "approved"}); err != nil {
-			log.Printf("notify agent: %v", err)
-		}
-	} else {
-		if err := conn.writeJSON(map[string]string{"type": "pending"}); err != nil {
-			log.Printf("notify agent: %v", err)
-		}
-	}
 
 	go s.readAgent(conn, agent)
 	go s.pingAgent(conn)
