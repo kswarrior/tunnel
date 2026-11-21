@@ -76,6 +76,13 @@ export function deleteAgent(id: string): Promise<{ status: string }> {
   })
 }
 
+export function reconnectAgent(id: string): Promise<{ status: string }> {
+  return request<{ status: string }>(
+    `/api/agents/${encodeURIComponent(id)}/reconnect`,
+    { method: 'POST' },
+  )
+}
+
 export function getTunnels(): Promise<Tunnel[]> {
   return request<Tunnel[]>('/api/tunnels')
 }

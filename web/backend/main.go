@@ -407,6 +407,9 @@ func (s *store) setTunnelResult(id, publicURL, errorMessage string) {
 		if s.state.Tunnels[i].ID != id {
 			continue
 		}
+		if s.state.Tunnels[i].Status != "pending" {
+			return
+		}
 
 		if errorMessage != "" {
 			s.state.Tunnels[i].Status = "error"
