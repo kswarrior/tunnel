@@ -18,7 +18,7 @@ export type Agent = {
 
 export type TunnelType = 'https' | 'http' | 'tcp' | 'udp'
 
-export type TunnelStatus = 'pending' | 'active' | 'error'
+export type TunnelStatus = 'pending' | 'active' | 'error' | 'stopped'
 
 export type Tunnel = {
   id: string

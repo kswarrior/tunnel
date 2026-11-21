@@ -107,3 +107,22 @@ export function deleteTunnel(id: string): Promise<{ status: string }> {
     { method: 'DELETE' },
   )
 }
+
+export function startTunnel(id: string): Promise<Tunnel> {
+  return request<Tunnel>(`/api/tunnels/${encodeURIComponent(id)}/start`, {
+    method: 'POST',
+  })
+}
+
+export function stopTunnel(id: string): Promise<Tunnel> {
+  return request<Tunnel>(`/api/tunnels/${encodeURIComponent(id)}/stop`, {
+    method: 'POST',
+  })
+}
+
+export function reconfigureTunnelURL(id: string): Promise<Tunnel> {
+  return request<Tunnel>(
+    `/api/tunnels/${encodeURIComponent(id)}/reconfigure-url`,
+    { method: 'POST' },
+  )
+}

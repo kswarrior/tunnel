@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import { deleteTunnel, getAgents, getProviders, getTunnels } from '../api'
+import {
+  deleteTunnel,
+  getAgents,
+  getProviders,
+  getTunnels,
+  reconfigureTunnelURL,
+  startTunnel,
+  stopTunnel,
+} from '../api'
 import type { Agent, Provider, Tunnel } from '../types'
 import { AddTunnelModal } from '../components/AddTunnelModal'
 import { CardMenu } from '../components/CardMenu'
@@ -8,7 +16,9 @@ import {
   AlertIcon,
   CheckIcon,
   CopyIcon,
+  PlayIcon,
   PlusIcon,
+  StopIcon,
   TunnelIcon,
 } from '../components/Icons'
 import { PageHeader } from '../components/PageHeader'
@@ -17,6 +27,7 @@ const statusLabels: Record<Tunnel['status'], string> = {
   active: 'Active',
   pending: 'Starting',
   error: 'Error',
+  stopped: 'Stopped',
 }
 
 function TunnelUrl({ tunnel }: { tunnel: Tunnel }) {

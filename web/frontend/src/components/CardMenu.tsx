@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { MoreIcon, PencilIcon, TrashIcon } from './Icons'
+import { MoreIcon, PencilIcon, RefreshIcon, TrashIcon } from './Icons'
 
 type CardMenuProps = {
   label: string
   onEdit: () => void
   onDelete: () => void
+  onReconfigure?: () => void
 }
 
-export function CardMenu({ label, onEdit, onDelete }: CardMenuProps) {
+export function CardMenu({
+  label,
+  onEdit,
+  onDelete,
+  onReconfigure,
+}: CardMenuProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -61,6 +67,20 @@ export function CardMenu({ label, onEdit, onDelete }: CardMenuProps) {
             <PencilIcon size={14} />
             Edit
           </button>
+          {onReconfigure ? (
+            <button
+              type="button"
+              className="card-menu-item"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                onReconfigure()
+              }}
+            >
+              <RefreshIcon size={14} />
+              Reconfigure URL
+            </button>
+          ) : null}
           <button
             type="button"
             className="card-menu-item danger"
