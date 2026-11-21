@@ -25,8 +25,6 @@ type Agent struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Token       string     `json:"token"`
-	Authorized  bool       `json:"authorized"`
-	Rejected    bool       `json:"rejected,omitempty"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	ConnectedAt *time.Time `json:"connectedAt,omitempty"`
 }
@@ -60,7 +58,6 @@ type store struct {
 var (
 	errUnknownProvider = errors.New("provider not found")
 	errUnknownAgent    = errors.New("agent not found")
-	errAgentNotAllowed = errors.New("agent not approved")
 )
 
 func newStore(path string) (*store, error) {
@@ -184,6 +181,42 @@ func (s *store) addProvider(name string) (Provider, error) {
 	return provider, nil
 }
 
+func (s *store) addAgent(name string) (Agent, error) {
+	id, err := newID()
+	if err != nil {
+		return Agent{}, err
+	}
+
+	token, err := newAgentToken()
+	if err != nil {
+		return Agent{}, err
+	}
+
+	agent := Agent{
+		ID:        id,
+		Name:      name,
+		Token:     token,
+		CreatedAt: time.Now().UTC(),
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, existing := range s.state.Agents {
+		if existing.Token == token {
+			return Agent{}, errors.New("agent token collision")
+		}
+	}
+
+	s.state.Agents = append(s.state.Agents, agent)
+	if err := s.saveLocked(); err != nil {
+		s.state.Agents = s.state.Agents[:len(s.state.Agents)-1]
+		return Agent{}, err
+	}
+
+	return agent, nil
+}
+
 func (s *store) addTunnel(tunnel Tunnel) (Tunnel, error) {
 	id, err := newID()
 	if err != nil {
@@ -212,9 +245,6 @@ func (s *store) addTunnel(tunnel Tunnel) (Tunnel, error) {
 	foundAgent := false
 	for _, agent := range s.state.Agents {
 		if agent.ID == tunnel.AgentID {
-			if !agent.Authorized {
-				return Tunnel{}, errAgentNotAllowed
-			}
 			foundAgent = true
 			break
 		}
@@ -307,6 +337,22 @@ func newID() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
+func newAgentToken() (string, error) {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	const length = 20
+
+	buffer := make([]byte, length)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+
+	for i := range buffer {
+		buffer[i] = alphabet[int(buffer[i])%len(alphabet)]
+	}
+
+	return string(buffer), nil
+}
+
 type server struct {
 	store *store
 	hub   *agentHub
@@ -341,6 +387,33 @@ func (s *server) createProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, provider)
+}
+
+type createAgentRequest struct {
+	Name string `json:"name"`
+}
+
+func (s *server) createAgent(w http.ResponseWriter, r *http.Request) {
+	var body createAgentRequest
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "Agent name is required.")
+		return
+	}
+
+	agent, err := s.store.addAgent(name)
+	if err != nil {
+		log.Printf("create agent: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not create agent.")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, newAgentView(agent, false))
 }
 
 func (s *server) listTunnels(w http.ResponseWriter, r *http.Request) {
@@ -387,11 +460,6 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !agent.Authorized {
-		writeError(w, http.StatusBadRequest, "Agent is not approved yet.")
-		return
-	}
-
 	if !s.hub.connected(agent.Token) {
 		writeError(w, http.StatusBadRequest, "Agent is offline. Start the CLI and try again.")
 		return
@@ -433,8 +501,8 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Provider not found.")
 		return
 	}
-	if errors.Is(err, errUnknownAgent) || errors.Is(err, errAgentNotAllowed) {
-		writeError(w, http.StatusBadRequest, "Agent not found or not approved.")
+	if errors.Is(err, errUnknownAgent) {
+		writeError(w, http.StatusBadRequest, "Agent not found.")
 		return
 	}
 	if err != nil {
@@ -582,8 +650,7 @@ func main() {
 	mux.HandleFunc("GET /api/providers", api.listProviders)
 	mux.HandleFunc("POST /api/providers", api.createProvider)
 	mux.HandleFunc("GET /api/agents", api.listAgents)
-	mux.HandleFunc("GET /api/agents/claim/{token}", api.getClaim)
-	mux.HandleFunc("POST /api/agents/claim/{token}", api.respondClaim)
+	mux.HandleFunc("POST /api/agents", api.createAgent)
 	mux.HandleFunc("GET /api/tunnels", api.listTunnels)
 	mux.HandleFunc("POST /api/tunnels", api.createTunnel)
 	mux.HandleFunc("/ws/agent", api.agentSocket)
