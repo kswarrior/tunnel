@@ -902,6 +902,13 @@ input {
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.045);
 }
 
+.field-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .field-error {
   display: flex;
   align-items: center;

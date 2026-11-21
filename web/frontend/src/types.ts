@@ -28,6 +28,7 @@ export type Tunnel = {
   ip: string
   port: number
   type: TunnelType
+  slug?: string
   publicUrl: string
   status: TunnelStatus
   error?: string

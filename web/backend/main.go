@@ -1100,6 +1100,41 @@ func (s *server) reconfigureTunnelURL(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tunnelView(tunnel, publicBaseURL(r)))
 }
 
+func (s *server) updateTunnelSlug(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	var body struct {
+		Slug string `json:"slug"`
+	}
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	slug := strings.ToLower(strings.TrimSpace(body.Slug))
+	if slug != "" && !validSlug(slug) {
+		writeError(w, http.StatusBadRequest, "Slug must be 2-40 characters using lowercase letters, numbers, and hyphens.")
+		return
+	}
+
+	tunnel, err := s.store.setTunnelSlug(id, slug)
+	if errors.Is(err, errUnknownTunnel) {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+	if errors.Is(err, errSlugInUse) {
+		writeError(w, http.StatusConflict, "Slug is already used by another tunnel.")
+		return
+	}
+	if err != nil {
+		log.Printf("update tunnel slug: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not update tunnel slug.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tunnelView(tunnel, publicBaseURL(r)))
+}
+
 func (s *server) redirectTunnel(w http.ResponseWriter, r *http.Request) {
 	alias := "/t/" + strings.TrimSpace(r.PathValue("alias"))
 
@@ -1109,6 +1144,22 @@ func (s *server) redirectTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.serveTunnelRedirect(w, r, tunnel)
+}
+
+func (s *server) redirectSlug(w http.ResponseWriter, r *http.Request) {
+	slug := strings.ToLower(strings.TrimSpace(r.PathValue("slug")))
+
+	tunnel, ok := s.store.tunnelBySlug(slug)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.serveTunnelRedirect(w, r, tunnel)
+}
+
+func (s *server) serveTunnelRedirect(w http.ResponseWriter, r *http.Request, tunnel Tunnel) {
 	w.Header().Set("Cache-Control", "no-store")
 	if tunnel.Status == "active" && tunnel.CurrentURL != "" {
 		http.Redirect(w, r, tunnel.CurrentURL, http.StatusFound)
@@ -1177,7 +1228,7 @@ func withCORS(next http.Handler) http.Handler {
 		if isLocalOrigin(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Add("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 
@@ -1275,8 +1326,11 @@ func main() {
 	mux.HandleFunc("POST /api/tunnels/{id}/start", api.startTunnel)
 	mux.HandleFunc("POST /api/tunnels/{id}/stop", api.stopTunnel)
 	mux.HandleFunc("POST /api/tunnels/{id}/reconfigure-url", api.reconfigureTunnelURL)
+	mux.HandleFunc("PUT /api/tunnels/{id}/slug", api.updateTunnelSlug)
 	mux.HandleFunc("GET /t/{alias}", api.redirectTunnel)
 	mux.HandleFunc("HEAD /t/{alias}", api.redirectTunnel)
+	mux.HandleFunc("GET /s/{slug}", api.redirectSlug)
+	mux.HandleFunc("HEAD /s/{slug}", api.redirectSlug)
 	mux.HandleFunc("/ws/agent", api.agentSocket)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Not found.")

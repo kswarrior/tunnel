@@ -126,3 +126,10 @@ export function reconfigureTunnelURL(id: string): Promise<Tunnel> {
     { method: 'POST' },
   )
 }
+
+export function updateTunnelSlug(id: string, slug: string): Promise<Tunnel> {
+  return request<Tunnel>(`/api/tunnels/${encodeURIComponent(id)}/slug`, {
+    method: 'PUT',
+    body: JSON.stringify({ slug }),
+  })
+}
