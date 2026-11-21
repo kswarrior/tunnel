@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { getAgents, getProviders, getTunnels } from '../api'
+import { deleteTunnel, getAgents, getProviders, getTunnels } from '../api'
 import type { Agent, Provider, Tunnel } from '../types'
 import { AddTunnelModal } from '../components/AddTunnelModal'
+import { CardMenu } from '../components/CardMenu'
+import { ConfirmModal } from '../components/ConfirmModal'
 import {
   AlertIcon,
   CheckIcon,
@@ -76,6 +78,8 @@ export function Tunnels() {
   const [agents, setAgents] = useState<Agent[] | null>(null)
   const [error, setError] = useState('')
   const [isAdding, setIsAdding] = useState(false)
+  const [editing, setEditing] = useState<Tunnel | null>(null)
+  const [deleting, setDeleting] = useState<Tunnel | null>(null)
 
   useEffect(() => {
     let active = true
@@ -208,19 +212,51 @@ export function Tunnels() {
                 </div>
                 <TunnelUrl tunnel={tunnel} />
               </div>
+              <div className="card-footer">
+                <CardMenu
+                  label={`Actions for ${tunnel.name}`}
+                  onEdit={() => setEditing(tunnel)}
+                  onDelete={() => setDeleting(tunnel)}
+                />
+              </div>
             </article>
           ))}
         </div>
       )}
 
-      {isAdding && providers && agents ? (
+      {(isAdding || editing) && providers && agents ? (
         <AddTunnelModal
           providers={providers}
           agents={agents}
-          onClose={() => setIsAdding(false)}
-          onCreated={(tunnel) =>
-            setTunnels((current) => [tunnel, ...(current ?? [])])
+          tunnel={editing ?? undefined}
+          onClose={() => {
+            setIsAdding(false)
+            setEditing(null)
+          }}
+          onSaved={(saved) =>
+            setTunnels((current) =>
+              current
+                ? current.map((tunnel) =>
+                    tunnel.id === saved.id ? saved : tunnel,
+                  )
+                : [saved],
+            )
           }
+        />
+      ) : null}
+
+      {deleting ? (
+        <ConfirmModal
+          title="Delete tunnel"
+          message={`Delete "${deleting.name}"? This cannot be undone.`}
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            await deleteTunnel(deleting.id)
+            setTunnels(
+              (current) =>
+                current?.filter((tunnel) => tunnel.id !== deleting.id) ?? null,
+            )
+          }}
         />
       ) : null}
     </div>

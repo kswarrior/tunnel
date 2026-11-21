@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { getAgents } from '../api'
+import { deleteAgent, getAgents } from '../api'
 import type { Agent, AgentStatus } from '../types'
 import { AddAgentModal } from '../components/AddAgentModal'
+import { CardMenu } from '../components/CardMenu'
+import { ConfirmModal } from '../components/ConfirmModal'
 import {
   AgentIcon,
   AlertIcon,
@@ -57,6 +59,8 @@ export function Agents() {
   const [agents, setAgents] = useState<Agent[] | null>(null)
   const [error, setError] = useState('')
   const [isAdding, setIsAdding] = useState(false)
+  const [editing, setEditing] = useState<Agent | null>(null)
+  const [deleting, setDeleting] = useState<Agent | null>(null)
 
   useEffect(() => {
     let active = true
@@ -148,18 +152,50 @@ export function Agents() {
                     : `Added ${formatDate(agent.createdAt)}`}
                 </p>
                 <AgentToken token={agent.token} />
+                <div className="card-footer">
+                  <CardMenu
+                    label={`Actions for ${agent.name}`}
+                    onEdit={() => setEditing(agent)}
+                    onDelete={() => setDeleting(agent)}
+                  />
+                </div>
               </div>
             </article>
           ))}
         </div>
       )}
 
-      {isAdding ? (
+      {isAdding || editing ? (
         <AddAgentModal
-          onClose={() => setIsAdding(false)}
-          onCreated={(agent) =>
-            setAgents((current) => [agent, ...(current ?? [])])
+          agent={editing ?? undefined}
+          onClose={() => {
+            setIsAdding(false)
+            setEditing(null)
+          }}
+          onSaved={(saved) =>
+            setAgents((current) =>
+              current
+                ? current.map((agent) =>
+                    agent.id === saved.id ? saved : agent,
+                  )
+                : [saved],
+            )
           }
+        />
+      ) : null}
+
+      {deleting ? (
+        <ConfirmModal
+          title="Delete agent"
+          message={`Delete "${deleting.name}"? This cannot be undone.`}
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            await deleteAgent(deleting.id)
+            setAgents(
+              (current) =>
+                current?.filter((agent) => agent.id !== deleting.id) ?? null,
+            )
+          }}
         />
       ) : null}
     </div>
