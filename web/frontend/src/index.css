@@ -540,7 +540,7 @@ input {
   right: 0;
   bottom: calc(100% + 6px);
   z-index: 15;
-  min-width: 132px;
+  min-width: 168px;
   padding: 5px;
   border: 1px solid #2a2a2a;
   border-radius: 10px;
@@ -1186,6 +1186,12 @@ input {
   color: #f3b4b4;
 }
 
+.status-badge.stopped {
+  border-color: #2d2d2d;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-soft);
+}
+
 .status-dot {
   width: 6px;
   height: 6px;
@@ -1208,6 +1214,10 @@ input {
   background: #f87171;
 }
 
+.status-dot.stopped {
+  background: #6b7280;
+}
+
 /* Tunnel URLs */
 
 .tunnel-badges {
@@ -1216,6 +1226,13 @@ input {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.tunnel-url-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .tunnel-url-row {
@@ -1261,6 +1278,10 @@ input {
 
 .tunnel-url-state.error {
   color: #e3a3a3;
+}
+
+.tunnel-url-state.stopped {
+  color: var(--muted);
 }
 
 /* Responsive */
