@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { deleteAgent, getAgents } from '../api'
+import { deleteAgent, getAgents, reconnectAgent } from '../api'
 import type { Agent, AgentStatus } from '../types'
 import { AddAgentModal } from '../components/AddAgentModal'
 import { CardMenu } from '../components/CardMenu'
@@ -10,6 +10,7 @@ import {
   CheckIcon,
   CopyIcon,
   PlusIcon,
+  RefreshIcon,
 } from '../components/Icons'
 import { PageHeader } from '../components/PageHeader'
 
@@ -61,6 +62,8 @@ export function Agents() {
   const [isAdding, setIsAdding] = useState(false)
   const [editing, setEditing] = useState<Agent | null>(null)
   const [deleting, setDeleting] = useState<Agent | null>(null)
+  const [reconnectingId, setReconnectingId] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     let active = true
@@ -90,6 +93,24 @@ export function Agents() {
     }
   }, [])
 
+  async function handleReconnect(agent: Agent) {
+    setReconnectingId(agent.id)
+    setNotice('')
+
+    try {
+      await reconnectAgent(agent.id)
+      setNotice(`Reconnecting "${agent.name}".`)
+    } catch (requestError) {
+      setNotice(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Could not reconnect agent.',
+      )
+    } finally {
+      setReconnectingId(null)
+    }
+  }
+
   return (
     <div className="page">
       <PageHeader
@@ -105,6 +126,12 @@ export function Agents() {
           </button>
         }
       />
+
+      {notice ? (
+        <p className="action-notice" role="status">
+          {notice}
+        </p>
+      ) : null}
 
       {error ? (
         <div className="empty-state">
@@ -153,11 +180,23 @@ export function Agents() {
                 </p>
                 <AgentToken token={agent.token} />
                 <div className="card-footer">
-                  <CardMenu
-                    label={`Actions for ${agent.name}`}
-                    onEdit={() => setEditing(agent)}
-                    onDelete={() => setDeleting(agent)}
-                  />
+                  <div className="card-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      disabled={reconnectingId === agent.id}
+                      onClick={() => handleReconnect(agent)}
+                      aria-label={`Reconnect ${agent.name}`}
+                    >
+                      <RefreshIcon size={14} />
+                      Reconnect
+                    </button>
+                    <CardMenu
+                      label={`Actions for ${agent.name}`}
+                      onEdit={() => setEditing(agent)}
+                      onDelete={() => setDeleting(agent)}
+                    />
+                  </div>
                 </div>
               </div>
             </article>
