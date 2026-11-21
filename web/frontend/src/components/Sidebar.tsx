@@ -69,7 +69,10 @@ export function Sidebar({
         <span className="brand-mark">
           <BrandMark />
         </span>
-        <span className="brand-name">KS Tunnel</span>
+        <div className="brand-text">
+          <span className="brand-name">KS Tunnel</span>
+          <span className="brand-subtitle">KS Warrior</span>
+        </div>
         <button
           type="button"
           className="icon-button sidebar-close"

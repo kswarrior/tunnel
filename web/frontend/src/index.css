@@ -139,19 +139,57 @@ input {
   filter: drop-shadow(0 4px 14px rgba(255, 255, 255, 0.09));
 }
 
-.brand-name {
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   max-width: 160px;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    opacity 160ms ease,
+    max-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.brand-name {
   overflow: hidden;
   color: var(--white);
   font-size: 14.5px;
   font-weight: 600;
   letter-spacing: -0.015em;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 1;
-  transition:
-    opacity 160ms ease,
-    max-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.brand-subtitle {
+  position: relative;
+  display: inline-block;
+  align-self: flex-start;
+  width: calc(10ch + 1.8em);
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+  animation: brand-typing 1.2s steps(10, end) 0.35s both;
+}
+
+.brand-subtitle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 1px;
+  height: 9px;
+  background: rgba(255, 255, 255, 0.45);
+  transform: translateY(-50%);
+  animation: brand-caret 0.9s step-end infinite;
 }
 
 .sidebar.collapsed .brand {
@@ -160,7 +198,7 @@ input {
   padding: 0;
 }
 
-.sidebar.collapsed .brand-name {
+.sidebar.collapsed .brand-text {
   max-width: 0;
   opacity: 0;
 }
@@ -1130,8 +1168,8 @@ input {
     padding: 2px 10px;
   }
 
-  .sidebar .brand-name,
-  .sidebar.collapsed .brand-name {
+  .sidebar .brand-text,
+  .sidebar.collapsed .brand-text {
     max-width: 160px;
     opacity: 1;
   }
@@ -1258,6 +1296,38 @@ input {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .brand-subtitle {
+    width: auto;
+    animation: none;
+  }
+
+  .brand-subtitle::after {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+@keyframes brand-typing {
+  from {
+    width: 0;
+  }
+
+  to {
+    width: calc(10ch + 1.8em);
+  }
+}
+
+@keyframes brand-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0;
   }
 }
 
