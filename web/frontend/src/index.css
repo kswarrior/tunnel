@@ -937,19 +937,22 @@ input {
 
 /* Agents */
 
-.agent-guide {
+.agent-form-guide {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  gap: 16px;
-  padding: 20px;
+  gap: 10px;
   margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid #242424;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
-.agent-guide-text {
-  max-width: 620px;
-  margin: 6px 0 12px;
+.agent-form-guide p {
+  margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.5;
 }
 
@@ -1281,10 +1284,6 @@ input {
   .modal-body {
     padding-right: 18px;
     padding-left: 18px;
-  }
-
-  .agent-guide {
-    flex-direction: column;
   }
 
 }

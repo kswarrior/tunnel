@@ -48,6 +48,14 @@ export function AddAgentModal({ onClose, onCreated }: AddAgentModalProps) {
   return (
     <Modal title="Add agent" onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate>
+        <div className="agent-form-guide">
+          <p>
+            After adding, you will get a token. Run the CLI with that token on
+            the machine you want to expose:
+          </p>
+          <code className="code-block">./kstunnel --token=&lt;token&gt;</code>
+        </div>
+
         <Field label="Name" htmlFor="agent-name" error={error}>
           <input
             id="agent-name"

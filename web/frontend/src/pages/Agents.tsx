@@ -102,20 +102,6 @@ export function Agents() {
         }
       />
 
-      <div className="card agent-guide">
-        <span className="card-icon">
-          <AgentIcon size={20} />
-        </span>
-        <div>
-          <h2 className="card-title">Connect a CLI</h2>
-          <p className="agent-guide-text">
-            Add an agent to get a token, then run the CLI with that token on the
-            machine you want to expose.
-          </p>
-          <code className="code-block">./kstunnel --token=&lt;token&gt;</code>
-        </div>
-      </div>
-
       {error ? (
         <div className="empty-state">
           <span className="empty-icon">
