@@ -16,12 +16,14 @@ import {
   AlertIcon,
   CheckIcon,
   CopyIcon,
+  LinkIcon,
   PlayIcon,
   PlusIcon,
   StopIcon,
   TunnelIcon,
 } from '../components/Icons'
 import { PageHeader } from '../components/PageHeader'
+import { SlugModal } from '../components/SlugModal'
 
 const statusLabels: Record<Tunnel['status'], string> = {
   active: 'Active',
@@ -95,6 +97,7 @@ export function Tunnels() {
   const [isAdding, setIsAdding] = useState(false)
   const [editing, setEditing] = useState<Tunnel | null>(null)
   const [deleting, setDeleting] = useState<Tunnel | null>(null)
+  const [slugging, setSlugging] = useState<Tunnel | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
 
@@ -304,6 +307,16 @@ export function Tunnels() {
                     <PlayIcon size={14} />
                     Start
                   </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => setSlugging(tunnel)}
+                    aria-label={`Set slug for ${tunnel.name}`}
+                    title="Set custom slug"
+                  >
+                    <LinkIcon size={14} />
+                    Slug
+                  </button>
                   <CardMenu
                     label={`Actions for ${tunnel.name}`}
                     onEdit={() => setEditing(tunnel)}
@@ -339,6 +352,20 @@ export function Tunnels() {
                     tunnel.id === saved.id ? saved : tunnel,
                   )
                 : [saved],
+            )
+          }
+        />
+      ) : null}
+
+      {slugging ? (
+        <SlugModal
+          tunnel={slugging}
+          onClose={() => setSlugging(null)}
+          onSaved={(saved) =>
+            setTunnels((current) =>
+              current?.map((tunnel) =>
+                tunnel.id === saved.id ? saved : tunnel,
+              ) ?? null,
             )
           }
         />
