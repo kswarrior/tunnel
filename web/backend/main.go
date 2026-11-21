@@ -592,46 +592,55 @@ type createTunnelRequest struct {
 	Type       string `json:"type"`
 }
 
-func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
+type tunnelInput struct {
+	Name     string
+	Provider Provider
+	Agent    Agent
+	IP       string
+	Port     int
+	Type     string
+}
+
+func (s *server) parseTunnelInput(w http.ResponseWriter, r *http.Request) (tunnelInput, bool) {
 	var body createTunnelRequest
 	if err := decodeJSON(w, r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return tunnelInput{}, false
 	}
 
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		writeError(w, http.StatusBadRequest, "Tunnel name is required.")
-		return
+		return tunnelInput{}, false
 	}
 
 	providerID := strings.TrimSpace(body.ProviderID)
 	if providerID == "" {
 		writeError(w, http.StatusBadRequest, "Provider is required.")
-		return
+		return tunnelInput{}, false
 	}
 
 	agentID := strings.TrimSpace(body.AgentID)
 	if agentID == "" {
 		writeError(w, http.StatusBadRequest, "Agent is required.")
-		return
+		return tunnelInput{}, false
 	}
 
 	agent, ok := s.store.agentByID(agentID)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "Agent not found.")
-		return
+		return tunnelInput{}, false
 	}
 
 	if !s.hub.connected(agent.Token) {
 		writeError(w, http.StatusBadRequest, "Agent is offline. Start the CLI and try again.")
-		return
+		return tunnelInput{}, false
 	}
 
 	provider, ok := s.store.providerByID(providerID)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "Provider not found.")
-		return
+		return tunnelInput{}, false
 	}
 
 	ip := strings.TrimSpace(body.IP)
@@ -641,7 +650,7 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 
 	if body.Port < 1 || body.Port > 65535 {
 		writeError(w, http.StatusBadRequest, "Port must be between 1 and 65535.")
-		return
+		return tunnelInput{}, false
 	}
 
 	tunnelType := strings.ToLower(strings.TrimSpace(body.Type))
@@ -649,16 +658,46 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 	case "https", "http", "tcp", "udp":
 	default:
 		writeError(w, http.StatusBadRequest, "Type must be https, http, tcp, or udp.")
+		return tunnelInput{}, false
+	}
+
+	return tunnelInput{
+		Name:     name,
+		Provider: provider,
+		Agent:    agent,
+		IP:       ip,
+		Port:     body.Port,
+		Type:     tunnelType,
+	}, true
+}
+
+func tunnelCommand(tunnel Tunnel, providerName string) createTunnelMessage {
+	return createTunnelMessage{
+		Type: "create_tunnel",
+		Tunnel: agentTunnel{
+			ID:       tunnel.ID,
+			Name:     tunnel.Name,
+			Provider: providerName,
+			IP:       tunnel.IP,
+			Port:     tunnel.Port,
+			Type:     tunnel.Type,
+		},
+	}
+}
+
+func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
+	input, ok := s.parseTunnelInput(w, r)
+	if !ok {
 		return
 	}
 
 	tunnel, err := s.store.addTunnel(Tunnel{
-		Name:       name,
-		ProviderID: providerID,
-		AgentID:    agentID,
-		IP:         ip,
-		Port:       body.Port,
-		Type:       tunnelType,
+		Name:       input.Name,
+		ProviderID: input.Provider.ID,
+		AgentID:    input.Agent.ID,
+		IP:         input.IP,
+		Port:       input.Port,
+		Type:       input.Type,
 	})
 	if errors.Is(err, errUnknownProvider) {
 		writeError(w, http.StatusBadRequest, "Provider not found.")
@@ -674,25 +713,85 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	command := createTunnelMessage{
-		Type: "create_tunnel",
-		Tunnel: agentTunnel{
-			ID:       tunnel.ID,
-			Name:     tunnel.Name,
-			Provider: provider.Name,
-			IP:       tunnel.IP,
-			Port:     tunnel.Port,
-			Type:     tunnel.Type,
-		},
-	}
-
-	if err := s.hub.send(agent.Token, command); err != nil {
+	if err := s.hub.send(input.Agent.Token, tunnelCommand(tunnel, input.Provider.Name)); err != nil {
 		s.store.deleteTunnel(tunnel.ID)
 		writeError(w, http.StatusBadGateway, "Could not reach the agent. Make sure the CLI is running.")
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, tunnel)
+}
+
+func (s *server) updateTunnel(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	existing, ok := s.store.tunnelByID(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+
+	input, ok := s.parseTunnelInput(w, r)
+	if !ok {
+		return
+	}
+
+	if oldAgent, ok := s.store.agentByID(existing.AgentID); ok && s.hub.connected(oldAgent.Token) {
+		action := tunnelActionMessage{Type: "delete_tunnel", TunnelID: id}
+		if err := s.hub.send(oldAgent.Token, action); err != nil {
+			log.Printf("stop old tunnel: %v", err)
+		}
+	}
+
+	tunnel, err := s.store.updateTunnel(id, Tunnel{
+		Name:       input.Name,
+		ProviderID: input.Provider.ID,
+		AgentID:    input.Agent.ID,
+		IP:         input.IP,
+		Port:       input.Port,
+		Type:       input.Type,
+	})
+	if errors.Is(err, errUnknownTunnel) {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+	if err != nil {
+		log.Printf("update tunnel: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not update tunnel.")
+		return
+	}
+
+	if err := s.hub.send(input.Agent.Token, tunnelCommand(tunnel, input.Provider.Name)); err != nil {
+		s.store.setTunnelResult(tunnel.ID, "", "Could not reach the agent. Make sure the CLI is running.")
+		writeError(w, http.StatusBadGateway, "Could not reach the agent. Make sure the CLI is running.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tunnel)
+}
+
+func (s *server) deleteTunnel(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	tunnel, ok := s.store.tunnelByID(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+
+	if agent, ok := s.store.agentByID(tunnel.AgentID); ok && s.hub.connected(agent.Token) {
+		action := tunnelActionMessage{Type: "delete_tunnel", TunnelID: id}
+		if err := s.hub.send(agent.Token, action); err != nil {
+			log.Printf("stop tunnel: %v", err)
+		}
+	}
+
+	if _, ok := s.store.deleteTunnel(id); !ok {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
@@ -728,7 +827,7 @@ func withCORS(next http.Handler) http.Handler {
 		if isLocalOrigin(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Add("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 
@@ -812,10 +911,16 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/providers", api.listProviders)
 	mux.HandleFunc("POST /api/providers", api.createProvider)
+	mux.HandleFunc("PATCH /api/providers/{id}", api.updateProvider)
+	mux.HandleFunc("DELETE /api/providers/{id}", api.deleteProvider)
 	mux.HandleFunc("GET /api/agents", api.listAgents)
 	mux.HandleFunc("POST /api/agents", api.createAgent)
+	mux.HandleFunc("PATCH /api/agents/{id}", api.updateAgent)
+	mux.HandleFunc("DELETE /api/agents/{id}", api.deleteAgent)
 	mux.HandleFunc("GET /api/tunnels", api.listTunnels)
 	mux.HandleFunc("POST /api/tunnels", api.createTunnel)
+	mux.HandleFunc("PATCH /api/tunnels/{id}", api.updateTunnel)
+	mux.HandleFunc("DELETE /api/tunnels/{id}", api.deleteTunnel)
 	mux.HandleFunc("/ws/agent", api.agentSocket)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Not found.")

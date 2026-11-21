@@ -205,6 +205,17 @@ func (m *tunnelManager) add(id string, tunnel *runningTunnel) {
 	m.mu.Unlock()
 }
 
+func (m *tunnelManager) stop(id string) {
+	m.mu.Lock()
+	tunnel := m.tunnels[id]
+	delete(m.tunnels, id)
+	m.mu.Unlock()
+
+	if tunnel != nil {
+		tunnel.cancel()
+	}
+}
+
 func (m *tunnelManager) remove(id string, tunnel *runningTunnel) {
 	m.mu.Lock()
 	if m.tunnels[id] == tunnel {

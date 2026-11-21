@@ -38,6 +38,20 @@ export function createProvider(name: string): Promise<Provider> {
   })
 }
 
+export function updateProvider(id: string, name: string): Promise<Provider> {
+  return request<Provider>(`/api/providers/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function deleteProvider(id: string): Promise<{ status: string }> {
+  return request<{ status: string }>(
+    `/api/providers/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+}
+
 export function getAgents(): Promise<Agent[]> {
   return request<Agent[]>('/api/agents')
 }
@@ -46,6 +60,19 @@ export function createAgent(name: string): Promise<Agent> {
   return request<Agent>('/api/agents', {
     method: 'POST',
     body: JSON.stringify({ name }),
+  })
+}
+
+export function updateAgent(id: string, name: string): Promise<Agent> {
+  return request<Agent>(`/api/agents/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function deleteAgent(id: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/agents/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
   })
 }
 
@@ -58,4 +85,18 @@ export function createTunnel(tunnel: NewTunnel): Promise<Tunnel> {
     method: 'POST',
     body: JSON.stringify(tunnel),
   })
+}
+
+export function updateTunnel(id: string, tunnel: NewTunnel): Promise<Tunnel> {
+  return request<Tunnel>(`/api/tunnels/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(tunnel),
+  })
+}
+
+export function deleteTunnel(id: string): Promise<{ status: string }> {
+  return request<{ status: string }>(
+    `/api/tunnels/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
 }

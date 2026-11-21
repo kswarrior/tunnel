@@ -54,8 +54,9 @@ type connectionConfig struct {
 }
 
 type serverMessage struct {
-	Type   string `json:"type"`
-	Tunnel struct {
+	Type     string `json:"type"`
+	TunnelID string `json:"tunnelId"`
+	Tunnel   struct {
 		ID       string `json:"id"`
 		Name     string `json:"name"`
 		Provider string `json:"provider"`
@@ -279,6 +280,8 @@ func (c *wsClient) readLoop(manager *tunnelManager) error {
 				Port:     message.Tunnel.Port,
 				Type:     message.Tunnel.Type,
 			})
+		case "delete_tunnel":
+			manager.stop(message.TunnelID)
 		}
 	}
 }
