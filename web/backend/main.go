@@ -58,6 +58,9 @@ type store struct {
 var (
 	errUnknownProvider = errors.New("provider not found")
 	errUnknownAgent    = errors.New("agent not found")
+	errUnknownTunnel   = errors.New("tunnel not found")
+	errProviderInUse   = errors.New("provider is used by a tunnel")
+	errAgentInUse      = errors.New("agent is used by a tunnel")
 )
 
 func newStore(path string) (*store, error) {
@@ -179,6 +182,60 @@ func (s *store) addProvider(name string) (Provider, error) {
 	}
 
 	return provider, nil
+}
+
+func (s *store) updateProvider(id, name string) (Provider, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Providers {
+		provider := &s.state.Providers[i]
+		if provider.ID != id {
+			continue
+		}
+
+		previousName := provider.Name
+		provider.Name = name
+
+		if err := s.saveLocked(); err != nil {
+			provider.Name = previousName
+			return Provider{}, err
+		}
+
+		return *provider, nil
+	}
+
+	return Provider{}, errUnknownProvider
+}
+
+func (s *store) deleteProvider(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.state.Providers {
+		if s.state.Providers[i].ID != id {
+			continue
+		}
+
+		for _, tunnel := range s.state.Tunnels {
+			if tunnel.ProviderID == id {
+				return errProviderInUse
+			}
+		}
+
+		previous := make([]Provider, len(s.state.Providers))
+		copy(previous, s.state.Providers)
+
+		s.state.Providers = append(s.state.Providers[:i], s.state.Providers[i+1:]...)
+		if err := s.saveLocked(); err != nil {
+			s.state.Providers = previous
+			return err
+		}
+
+		return nil
+	}
+
+	return errUnknownProvider
 }
 
 func (s *store) addAgent(name string) (Agent, error) {
