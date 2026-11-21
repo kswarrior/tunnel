@@ -186,6 +186,23 @@ func (s *server) listAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, views)
 }
 
+func (s *server) reconnectAgent(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	agent, ok := s.store.agentByID(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "Agent not found.")
+		return
+	}
+	if !s.hub.connected(agent.Token) {
+		writeError(w, http.StatusConflict, "Agent is offline. Start the CLI to reconnect.")
+		return
+	}
+
+	s.hub.close(agent.Token)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reconnecting"})
+}
+
 func (s *server) updateAgent(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 

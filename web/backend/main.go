@@ -859,7 +859,7 @@ func (s *server) createTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, tunnel)
+	writeJSON(w, http.StatusCreated, tunnelView(tunnel, publicBaseURL(r)))
 }
 
 func (s *server) updateTunnel(w http.ResponseWriter, r *http.Request) {
@@ -907,7 +907,148 @@ func (s *server) updateTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, tunnel)
+	writeJSON(w, http.StatusOK, tunnelView(tunnel, publicBaseURL(r)))
+}
+
+func (s *server) stopTunnel(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	tunnel, ok := s.store.tunnelByID(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+
+	if agent, ok := s.store.agentByID(tunnel.AgentID); ok && s.hub.connected(agent.Token) {
+		action := tunnelActionMessage{Type: "delete_tunnel", TunnelID: id}
+		if err := s.hub.send(agent.Token, action); err != nil {
+			log.Printf("stop tunnel: %v", err)
+		}
+	}
+
+	tunnel, err := s.store.setTunnelStatus(id, "stopped")
+	if errors.Is(err, errUnknownTunnel) {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+	if err != nil {
+		log.Printf("stop tunnel: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not stop tunnel.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tunnelView(tunnel, publicBaseURL(r)))
+}
+
+func (s *server) startTunnel(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	tunnel, ok := s.store.tunnelByID(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+	if tunnel.Status == "active" || tunnel.Status == "pending" {
+		writeError(w, http.StatusConflict, "Tunnel is already running.")
+		return
+	}
+
+	agent, ok := s.store.agentByID(tunnel.AgentID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Agent not found.")
+		return
+	}
+	if !s.hub.connected(agent.Token) {
+		writeError(w, http.StatusBadRequest, "Agent is offline. Start the CLI and try again.")
+		return
+	}
+
+	provider, ok := s.store.providerByID(tunnel.ProviderID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Provider not found.")
+		return
+	}
+
+	tunnel, err := s.store.setTunnelStatus(id, "pending")
+	if err != nil {
+		log.Printf("start tunnel: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not start tunnel.")
+		return
+	}
+
+	if err := s.hub.send(agent.Token, tunnelCommand(tunnel, provider.Name)); err != nil {
+		s.store.setTunnelResult(tunnel.ID, "", "Could not reach the agent. Make sure the CLI is running.")
+		writeError(w, http.StatusBadGateway, "Could not reach the agent. Make sure the CLI is running.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tunnelView(tunnel, publicBaseURL(r)))
+}
+
+func (s *server) reconfigureTunnelURL(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+
+	tunnel, ok := s.store.tunnelByID(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "Tunnel not found.")
+		return
+	}
+
+	agent, ok := s.store.agentByID(tunnel.AgentID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Agent not found.")
+		return
+	}
+	if !s.hub.connected(agent.Token) {
+		writeError(w, http.StatusBadRequest, "Agent is offline. Start the CLI and try again.")
+		return
+	}
+
+	provider, ok := s.store.providerByID(tunnel.ProviderID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Provider not found.")
+		return
+	}
+
+	action := tunnelActionMessage{Type: "delete_tunnel", TunnelID: id}
+	if err := s.hub.send(agent.Token, action); err != nil {
+		log.Printf("stop tunnel for URL reset: %v", err)
+	}
+
+	tunnel, err := s.store.rotateTunnelAlias(id)
+	if err != nil {
+		log.Printf("reset tunnel URL: %v", err)
+		writeError(w, http.StatusInternalServerError, "Could not change tunnel URL.")
+		return
+	}
+
+	if err := s.hub.send(agent.Token, tunnelCommand(tunnel, provider.Name)); err != nil {
+		s.store.setTunnelResult(tunnel.ID, "", "Could not reach the agent. Make sure the CLI is running.")
+		writeError(w, http.StatusBadGateway, "Could not reach the agent. Make sure the CLI is running.")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tunnelView(tunnel, publicBaseURL(r)))
+}
+
+func (s *server) redirectTunnel(w http.ResponseWriter, r *http.Request) {
+	alias := "/t/" + strings.TrimSpace(r.PathValue("alias"))
+
+	tunnel, ok := s.store.tunnelByAlias(alias)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	if tunnel.Status == "active" && tunnel.CurrentURL != "" {
+		http.Redirect(w, r, tunnel.CurrentURL, http.StatusFound)
+		return
+	}
+
+	w.Header().Set("Retry-After", "5")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = fmt.Fprint(w, "<!doctype html><meta http-equiv=\"refresh\" content=\"5\"><title>Tunnel starting</title><p>Tunnel is not running yet. Retrying...</p>")
 }
 
 func (s *server) deleteTunnel(w http.ResponseWriter, r *http.Request) {
@@ -1042,7 +1183,7 @@ func main() {
 	port := envOr("PORT", "8080")
 	dataFile := envOr("KS_DATA_FILE", "data.json")
 
-	dataStore, err := newStore(dataFile)
+	dataStore, err := newStore(dataFile, strings.TrimRight(envOr("KS_PUBLIC_URL", "http://localhost:"+port), "/"))
 	if err != nil {
 		log.Fatalf("load store: %v", err)
 	}
@@ -1057,10 +1198,16 @@ func main() {
 	mux.HandleFunc("POST /api/agents", api.createAgent)
 	mux.HandleFunc("PATCH /api/agents/{id}", api.updateAgent)
 	mux.HandleFunc("DELETE /api/agents/{id}", api.deleteAgent)
+	mux.HandleFunc("POST /api/agents/{id}/reconnect", api.reconnectAgent)
 	mux.HandleFunc("GET /api/tunnels", api.listTunnels)
 	mux.HandleFunc("POST /api/tunnels", api.createTunnel)
 	mux.HandleFunc("PATCH /api/tunnels/{id}", api.updateTunnel)
 	mux.HandleFunc("DELETE /api/tunnels/{id}", api.deleteTunnel)
+	mux.HandleFunc("POST /api/tunnels/{id}/start", api.startTunnel)
+	mux.HandleFunc("POST /api/tunnels/{id}/stop", api.stopTunnel)
+	mux.HandleFunc("POST /api/tunnels/{id}/reconfigure-url", api.reconfigureTunnelURL)
+	mux.HandleFunc("GET /t/{alias}", api.redirectTunnel)
+	mux.HandleFunc("HEAD /t/{alias}", api.redirectTunnel)
 	mux.HandleFunc("/ws/agent", api.agentSocket)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "Not found.")
