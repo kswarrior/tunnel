@@ -37,7 +37,9 @@ type Tunnel struct {
 	IP         string    `json:"ip"`
 	Port       int       `json:"port"`
 	Type       string    `json:"type"`
+	AliasPath  string    `json:"aliasPath,omitempty"`
 	PublicURL  string    `json:"publicUrl"`
+	CurrentURL string    `json:"currentUrl,omitempty"`
 	Status     string    `json:"status"`
 	Error      string    `json:"error,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
