@@ -1335,6 +1335,8 @@ func main() {
 	}
 
 	api := &server{store: dataStore, hub: newAgentHub()}
+	startSelfAgent(dataStore)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/providers", api.listProviders)
 	mux.HandleFunc("POST /api/providers", api.createProvider)
