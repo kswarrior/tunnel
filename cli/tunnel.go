@@ -168,31 +168,28 @@ func (m *tunnelManager) run(request tunnelRequest) (string, error) {
 func providerCommand(provider string, port int, target string) (string, []string, *regexp.Regexp, error) {
 	name := strings.ToLower(strings.TrimSpace(provider))
 
-	if strings.Contains(name, "local") {
+	switch {
+	case strings.Contains(name, "local"):
 		path, err := exec.LookPath("npx")
 		if err != nil {
-			return "", nil, nil, errors.New("npx is required for the localtunnel provider")
+			return "", nil, nil, errors.New("npx is required for the LocalTunnel provider")
 		}
 
 		return path, localtunnelArgs(port), localtunnelURLPattern, nil
-	}
+	case strings.Contains(name, "cloudflare"):
+		path, err := exec.LookPath("cloudflared")
+		if err != nil {
+			return "", nil, nil, errors.New("cloudflared is not installed on the agent machine; install it to use the Cloudflare provider")
+		}
 
-	if path, err := exec.LookPath("cloudflared"); err == nil {
 		return path, []string{
 			"tunnel",
 			"--url", target,
 			"--no-autoupdate",
 		}, cloudflaredURLPattern, nil
+	default:
+		return "", nil, nil, fmt.Errorf("unsupported provider %q: use Cloudflare or LocalTunnel", provider)
 	}
-
-	path, err := exec.LookPath("npx")
-	if err != nil {
-		return "", nil, nil, errors.New("cloudflared is not installed and npx is unavailable")
-	}
-
-	log.Print("cloudflared was not found; falling back to localtunnel")
-
-	return path, localtunnelArgs(port), localtunnelURLPattern, nil
 }
 
 func localtunnelArgs(port int) []string {

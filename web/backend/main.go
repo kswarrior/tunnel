@@ -67,6 +67,35 @@ var (
 	errSlugInUse       = errors.New("slug is already used by another tunnel")
 )
 
+func defaultProviders() []Provider {
+	now := time.Now().UTC()
+
+	return []Provider{
+		{ID: "cloudflare", Name: "Cloudflare", CreatedAt: now},
+		{ID: "localtunnel", Name: "LocalTunnel", CreatedAt: now},
+	}
+}
+
+func ensureDefaultProviders(providers []Provider) ([]Provider, bool) {
+	changed := false
+
+	for _, fallback := range defaultProviders() {
+		found := false
+		for _, provider := range providers {
+			if provider.ID == fallback.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			providers = append(providers, fallback)
+			changed = true
+		}
+	}
+
+	return providers, changed
+}
+
 func newStore(path, baseURL string) (*store, error) {
 	s := &store{path: path}
 
@@ -87,6 +116,7 @@ func newStore(path, baseURL string) (*store, error) {
 		}
 
 		changed := false
+		s.state.Providers, changed = ensureDefaultProviders(s.state.Providers)
 		for i := range s.state.Tunnels {
 			tunnel := &s.state.Tunnels[i]
 			if tunnel.Status == "" {
@@ -110,13 +140,9 @@ func newStore(path, baseURL string) (*store, error) {
 		return s, nil
 	case errors.Is(err, os.ErrNotExist):
 		s.state = state{
-			Providers: []Provider{{
-				ID:        "cloudflare",
-				Name:      "Cloudflare",
-				CreatedAt: time.Now().UTC(),
-			}},
-			Agents:  []Agent{},
-			Tunnels: []Tunnel{},
+			Providers: defaultProviders(),
+			Agents:    []Agent{},
+			Tunnels:   []Tunnel{},
 		}
 		if err := s.saveLocked(); err != nil {
 			return nil, err
